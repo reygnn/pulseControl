@@ -23,11 +23,17 @@ mit `pipewire-pulse`.
 | ↑ → + / Mausrad hoch | lauter (5 %) |
 | ↓ ← − / Mausrad runter | leiser (5 %) |
 | Regler klicken oder ziehen | Lautstärke setzen |
+| Ziffern, oder Klick auf den Prozentwert | Lautstärke eintippen |
 | m / Leertaste / Klick auf den Lautsprecher | stumm ein/aus |
 | Esc / q / Ctrl+Q / Ctrl+W | beenden |
 
 Mit Alt, Super oder Ctrl gedrückt wirkt keine dieser Tasten, außer Ctrl+Q und Ctrl+W.
 Die Lautstärketasten der Tastatur wirken, solange das Fenster den Fokus hat.
+
+Im Prozentfeld lassen sich 0 bis 100 eintippen; eine Ziffer, die darüber hinausginge,
+kommt nicht an. Enter übernimmt, Backspace löscht. Esc, ein Klick daneben oder der Wechsel
+in ein anderes Fenster bricht ab, solange das Feld offen ist, beendet Esc also nicht.
+0 stellt still, ein getippter Wert über 0 hebt die Stummschaltung auf.
 
 Der Regler endet bei 100 %. Hat ein anderes Programm mehr eingestellt, zeigt pulseControl den
 Wert an und kann ihn senken, hebt aber nichts über 100 % an: Der Wert bleibt, bis man

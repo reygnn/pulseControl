@@ -121,16 +121,26 @@ sc_start() {
 	S0=$((6 + BARH + 4 + 2))
 	S1=$(scale_end)
 	ROW=$((6 + BARH / 2 + 2))
+	# Inside the volume field, right of its text and above it.
+	FIELD_X=$((W - 6 - 3))
+	FIELD_Y=$((6 + 3))
 	echo "window ${W}x$H, scale x $S0..$S1"
 }
 
-# Where the inside of the scale ends, in the window. The percent text beside it depends
-# on the font, so walk in from the right along the scale's top bevel, above the text.
+# Where the inside of the scale ends, in the window. The volume field beside it depends
+# on the font, so walk in from the right along the top bevels: first the field, then the
+# gap, then the scale.
 scale_end() {
 	local x y=$((CY + 6)) shot=$SMOKE_DIR/w.png
 	# Stderr: the caller captures stdout, and would swallow the message.
 	WAYLAND_DISPLAY=wayland-0 grim "$shot" 2>/dev/null || fail "no screenshot" >&2
 	for ((x = CX + W - 1; x > CX; x--)); do
+		[ "$(build/pngtool pixel "$shot" "$x" "$y")" != aeb2c3 ] && break
+	done
+	for (( ; x > CX; x--)); do
+		[ "$(build/pngtool pixel "$shot" "$x" "$y")" = aeb2c3 ] && break
+	done
+	for (( ; x > CX; x--)); do
 		[ "$(build/pngtool pixel "$shot" "$x" "$y")" != aeb2c3 ] && break
 	done
 	echo $((x - CX - 1))
@@ -229,6 +239,96 @@ do_input key Down
 do_input key m
 expect_mute "unmuted" first no
 expect_vol "back at the volume from before" first 50 50
+
+# ---- typing the volume --------------------------------------------------------
+
+do_input key 4
+wait_pixel "a digit opens the field" "$FIELD_X" "$FIELD_Y" f6f6f6
+do_input key 2
+do_input key Return
+expect_vol "digits and Return set the volume" first 42 42
+wait_pixel "and close the field" "$FIELD_X" "$FIELD_Y" c6c9d5
+
+do_input key 7
+do_input key Escape
+wait_pixel "Esc closes the field" "$FIELD_X" "$FIELD_Y" c6c9d5
+kill -0 "$SC_PID" 2>/dev/null || fail "Esc in the field ended pulseControl"
+expect_vol "and leaves the volume" first 42 42
+
+do_input key 5
+do_input key q
+do_input key m
+sleep 0.2
+kill -0 "$SC_PID" 2>/dev/null || fail "q in the field ended pulseControl"
+expect_mute "m in the field doesn't mute" first no
+do_input key Up
+sleep 0.2
+expect_vol "Up in the field doesn't step" first 42 42
+do_input key Escape
+
+for k in 1 0 1; do do_input key "$k"; done
+do_input key Return
+expect_vol "a digit past 100 doesn't arrive" first 10 10
+for k in 1 0 0; do do_input key "$k"; done
+do_input key 7
+do_input key Return
+expect_vol "100 is the most, and has room for no more" first 100 100
+
+do_input key 6
+do_input key 7
+do_input key BackSpace
+do_input key Return
+expect_vol "Backspace takes a digit" first 6 6
+
+do_input key 0
+do_input key 5
+do_input key Return
+expect_vol "a leading zero is replaced" first 5 5
+
+do_input move $((CX + FIELD_X)) $((CY + ROW))
+do_input click left
+wait_pixel "a click opens the field" "$FIELD_X" "$FIELD_Y" f6f6f6
+do_input key Return
+sleep 0.2
+expect_vol "Return without typing changes nothing" first 5 5
+
+do_input click left
+do_input key 3
+do_input key 3
+do_input key Return
+expect_vol "typing after the click sets it" first 33 33
+
+do_input click left
+do_input key 9
+do_input move $((CX + $(thumb_mid 33))) $((CY + ROW))
+do_input click left
+wait_pixel "a click beside the field closes it" "$FIELD_X" "$FIELD_Y" c6c9d5
+expect_vol "and takes nothing" first 33 33
+
+do_input key 0
+do_input key Return
+expect_vol "0 is silence" first 0 0
+expect_mute "without muting" first no
+
+do_input key m
+expect_mute "muted" first yes
+do_input key 5
+do_input key 0
+do_input key Return
+expect_vol "a typed volume arrives" first 50 50
+expect_mute "and ends the muting" first no
+do_input key m
+expect_mute "muted again" first yes
+do_input key 0
+do_input key Return
+expect_vol "a typed 0 arrives" first 0 0
+expect_mute "and leaves the muting" first yes
+do_input key m
+expect_mute "unmuted" first no
+do_input key 5
+do_input key 0
+do_input key Return
+expect_vol "back at 50" first 50 50
 
 # ---- mouse -------------------------------------------------------------------
 

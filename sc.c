@@ -10,8 +10,10 @@
  *
  * Keys:   Up / Right / +  louder        Down / Left / -  quieter
  *         m / Space       mute          Esc / q / Ctrl+Q / Ctrl+W  quit
+ *         digits          type the volume, Return takes it, Esc doesn't
  *         also the volume keys of the keyboard, while the window has the focus
- * Mouse:  click or drag the scale, wheel anywhere, click the speaker to mute.
+ * Mouse:  click or drag the scale, wheel anywhere, click the speaker to mute,
+ *         click the percentage to type there.
  *
  * The scale ends at 100 %. A volume above that (set by another program) is
  * shown and can be lowered, but pulseControl does not raise anything past 100 %.
@@ -48,6 +50,7 @@
 
 #define BEV 2           /* bevel width, as in mwm */
 #define PAD 6
+#define FIELD_PAD 8     /* around the text in the volume field */
 #define THUMB 30        /* width of the scale's slider */
 #define STEP 5          /* percent per key press or wheel step */
 #define RETRY_MS 1000   /* between attempts to reach the sound server */
@@ -79,6 +82,9 @@ static pa_cvolume sink_shape;
 static int pending;
 
 static int dragging, drag_off, btn_pressed;
+/* Typing the volume. Fresh: what is shown goes at the first digit. */
+static int editing, edit_fresh;
+static char edit_buf[16];
 static int dirty = 1;
 
 /* ---- Wayland ------------------------------------------------------------ */
@@ -128,7 +134,7 @@ static uint64_t repeat_next;
 static int repeat_rate = 25, repeat_delay = 600;
 
 static int W = 320, H, float_w = 320, min_h;
-static uint32_t px_bg, px_top, px_bot, px_trough, px_sel;
+static uint32_t px_bg, px_top, px_bot, px_trough, px_sel, px_list, px_paper;
 static uint32_t xc_fg, xc_dim, xc_err;
 static cairo_t *cr;             /* what fill, bevel and text draw on */
 static PangoLayout *plo;
@@ -338,6 +344,8 @@ static void theme_init(void)
 	px_top = mix(bg, 0xffffff, 0.55f);
 	px_bot = mix(bg, 0x000000, 0.5f);
 	px_trough = mix(bg, 0x000000, 0.12f);
+	px_list = mix(bg, 0xffffff, 0.3f);
+	px_paper = 0xf6f6f6;
 	px_sel = setting("MWC_ACTIVE", "activeBackground", 0x7387ad);
 	xc_fg = fg;
 	xc_dim = mix(bg, fg, 0.6f);
@@ -372,6 +380,7 @@ static void sink_info(pa_context *c, const pa_sink_info *i, int eol, void *u)
 	dirty = 1;
 	if (eol < 0 || !i) {
 		sink_state = SINK_NONE;
+		editing = 0;
 		return;
 	}
 	pa_volume_t vol = pa_cvolume_max(&i->volume);
@@ -506,6 +515,7 @@ static void ctx_drop(void)
 	pending = 0;
 	dragging = 0;
 	sink_state = SINK_UNKNOWN;
+	editing = 0;
 	retry_at = now_ms() + RETRY_MS;
 	dirty = 1;
 }
@@ -570,6 +580,7 @@ static void layout(void)
 		snprintf(s, sizeof s, "%d %%", sink_pct);
 		pw = MAX(pw, textw(s));
 	}
+	pw += 2 * BEV + FIELD_PAD;
 	r_btn = (struct rect){ PAD, PAD, barh, barh };
 	r_pct = (struct rect){ W - PAD - pw, PAD, pw, barh };
 	r_scale = (struct rect){ PAD + barh + 4, PAD,
@@ -644,10 +655,27 @@ static void paint(void)
 		bevel(sl, 1);
 		fill(px_bot, tx + THUMB / 2 - 1, iy + BEV, 1, ih - 2 * BEV);
 		fill(px_top, tx + THUMB / 2, iy + BEV, 1, ih - 2 * BEV);
+	}
 
+	/* volume field */
+	int fx = r_pct.x + BEV, fy = r_pct.y + BEV;
+	int fw = r_pct.w - 2 * BEV, fh = r_pct.h - 2 * BEV;
+	fill(editing ? px_paper : px_list, fx, fy, fw, fh);
+	bevel(r_pct, 0);
+	if (editing) {
+		snprintf(s, sizeof s, "%s %%", edit_buf);
+		int tw = textw(s), tpos = fx + fw - FIELD_PAD / 2 - tw;
+		if (edit_fresh) {
+			fill(px_sel, tpos - 1, fy + 1, tw + 2, fh - 2);
+		} else {
+			fill(0x000000, tpos + textw(edit_buf), fy + 2, 1, fh - 4);
+		}
+		text(edit_fresh ? contrast(px_sel) : 0x000000, tpos, r_pct.y, r_pct.h,
+			fw, s);
+	} else if (ok) {
 		snprintf(s, sizeof s, "%d %%", sink_pct);
-		text(sink_mute ? xc_dim : xc_fg, r_pct.x + r_pct.w - textw(s),
-			r_pct.y, r_pct.h, r_pct.w, s);
+		text(sink_mute ? xc_dim : xc_fg, fx + fw - FIELD_PAD / 2 - textw(s),
+			r_pct.y, r_pct.h, fw, s);
 	}
 
 	/* status line */
@@ -722,6 +750,90 @@ static int plain_key(void)
 		!mod_on(XKB_MOD_NAME_CTRL);
 }
 
+/* The digit of a key, or -1. */
+static int key_digit(xkb_keysym_t ks)
+{
+	if (ks >= XKB_KEY_0 && ks <= XKB_KEY_9)
+		return ks - XKB_KEY_0;
+	if (ks >= XKB_KEY_KP_0 && ks <= XKB_KEY_KP_9)
+		return ks - XKB_KEY_KP_0;
+	return -1;
+}
+
+static void edit_begin(void)
+{
+	if (sink_state != SINK_OK || editing)
+		return;
+	editing = edit_fresh = 1;
+	snprintf(edit_buf, sizeof edit_buf, "%d", sink_pct);
+	dirty = 1;
+}
+
+static void edit_cancel(void)
+{
+	if (editing) {
+		editing = 0;
+		dirty = 1;
+	}
+}
+
+/* Nothing typed changes nothing. A typed volume is meant to be heard, so one above
+ * zero ends the muting, unlike a step. */
+static void edit_commit(void)
+{
+	int typed = !edit_fresh && edit_buf[0];
+	int pct = atoi(edit_buf);
+	edit_cancel();
+	if (!typed)
+		return;
+	set_percent(pct);
+	if (pct > 0 && sink_mute)
+		toggle_mute();
+}
+
+/* Keeps to 0..100: a digit that would go past it doesn't arrive. */
+static void edit_digit(int d)
+{
+	char next[sizeof edit_buf];
+	size_t n = edit_fresh ? 0 : strlen(edit_buf);
+	if (n == 1 && edit_buf[0] == '0')
+		n = 0;          /* not "05" */
+	if (n >= 3)
+		return;
+	memcpy(next, edit_buf, n);
+	next[n] = (char)('0' + d);
+	next[n + 1] = 0;
+	if (atoi(next) > 100)
+		return;
+	memcpy(edit_buf, next, n + 2);
+	edit_fresh = 0;
+	dirty = 1;
+}
+
+static void edit_key(xkb_keysym_t ks)
+{
+	int d = key_digit(ks);
+	if (d >= 0) {
+		edit_digit(d);
+		return;
+	}
+	switch (ks) {
+	case XKB_KEY_BackSpace: {
+		size_t n = edit_fresh ? 0 : strlen(edit_buf);
+		edit_buf[n ? n - 1 : 0] = 0;
+		edit_fresh = 0;
+		dirty = 1;
+		break;
+	}
+	case XKB_KEY_Return: case XKB_KEY_KP_Enter:
+		edit_commit();
+		break;
+	case XKB_KEY_Escape:
+		edit_cancel();
+		break;
+	}
+}
+
 static void key_action(xkb_keysym_t ks)
 {
 	switch (ks) {       /* the keyboard's volume keys mean only that */
@@ -742,6 +854,16 @@ static void key_action(xkb_keysym_t ks)
 		exit(0);
 	if (!plain_key())
 		return;
+	if (editing) {
+		edit_key(ks);
+		return;
+	}
+	if (key_digit(ks) >= 0) {
+		edit_begin();
+		if (editing)
+			edit_key(ks);
+		return;
+	}
 	switch (ks) {
 	case XKB_KEY_Up: case XKB_KEY_KP_Up:
 	case XKB_KEY_Right: case XKB_KEY_KP_Right:
@@ -774,7 +896,7 @@ static int key_repeats(uint32_t kc)
 	case XKB_KEY_Down: case XKB_KEY_KP_Down:
 	case XKB_KEY_Left: case XKB_KEY_KP_Left:
 	case XKB_KEY_minus: case XKB_KEY_KP_Subtract:
-		return plain_key();
+		return plain_key() && !editing;
 	}
 	return 0;
 }
@@ -814,6 +936,7 @@ static void kb_leave(void *data, struct wl_keyboard *k, uint32_t serial,
 	struct wl_surface *s)
 {
 	repeat_kc = 0;
+	edit_cancel();
 }
 
 static void kb_key(void *data, struct wl_keyboard *k, uint32_t serial,
@@ -923,6 +1046,11 @@ static void ptr_button(void *data, struct wl_pointer *p, uint32_t serial,
 	}
 	if (sink_state != SINK_OK)
 		return;
+	if (in(r_pct, ptr_x, ptr_y)) {
+		edit_begin();
+		return;
+	}
+	edit_cancel();
 	if (in(r_btn, ptr_x, ptr_y)) {
 		btn_pressed = 1;
 		dirty = 1;
@@ -977,8 +1105,10 @@ static void ptr_frame(void *data, struct wl_pointer *p)
 		axis_acc -= steps * AXIS_STEP;
 	}
 	axis_steps = 0;
-	if (steps && !dragging)
+	if (steps && !dragging) {
+		edit_cancel();
 		step_volume(-steps * STEP);
+	}
 }
 
 static const struct wl_pointer_listener pointer_listener = {
@@ -1134,8 +1264,8 @@ static void setup_window(void)
 	xdg_toplevel_set_app_id(toplevel, "pulseControl");
 	xdg_toplevel_set_title(toplevel, "pulseControl");
 	/* Room for all of it with the font in use, and a pixel per percent. */
-	int min_w = MAX(220, 2 * PAD + barh + textw("100 %") + 12 + 2 * BEV + THUMB +
-		100);
+	int min_w = MAX(220, 2 * PAD + barh + textw("100 %") + 2 * BEV + FIELD_PAD + 12 +
+		2 * BEV + THUMB + 100);
 	float_w = W = MAX(float_w, min_w);
 	xdg_toplevel_set_min_size(toplevel, min_w, min_h);
 	if (deco_mgr) {
