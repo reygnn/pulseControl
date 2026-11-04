@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=sc
+Name=pulseControl
 Comment=Minimal volume control in the Motif look
-Exec=sc
+Exec=pulseControl
 Icon=multimedia-volume-control
 Terminal=false
 Categories=AudioVideo;Audio;Mixer;

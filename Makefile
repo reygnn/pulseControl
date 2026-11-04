@@ -1,4 +1,4 @@
-# sc - minimal volume control for PulseAudio on Wayland (mwc look)
+# pulseControl - minimal volume control for PulseAudio on Wayland (mwc look)
 
 PREFIX ?= /usr/local
 PKG_CONFIG ?= pkg-config
@@ -20,9 +20,9 @@ SC_CFLAGS = -std=c11 -Wall -Wextra -Wno-unused-parameter -Ibuild \
 	$(shell $(PKG_CONFIG) --cflags $(PKGS))
 SC_LIBS = $(shell $(PKG_CONFIG) --libs $(PKGS))
 
-all: sc
+all: pulseControl
 
-sc: sc.c $(PROTO_H) $(PROTO_C)
+pulseControl: sc.c $(PROTO_H) $(PROTO_C)
 	$(CC) $(SC_CFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ sc.c $(PROTO_C) $(SC_LIBS) $(LDLIBS)
 
 build:
@@ -40,22 +40,22 @@ build/xdg-decoration-unstable-v1-client-protocol.h: | build
 build/xdg-decoration-unstable-v1-protocol.c: | build
 	$(WAYLAND_SCANNER) private-code $(XDG_DECORATION) $@
 
-install: sc
-	install -Dm755 sc $(DESTDIR)$(PREFIX)/bin/sc
+install: pulseControl
+	install -Dm755 pulseControl $(DESTDIR)$(PREFIX)/bin/pulseControl
 	mkdir -p $(DESTDIR)$(PREFIX)/share/applications
-	sed 's|^Exec=sc$$|Exec=$(PREFIX)/bin/sc|' data/sc.desktop \
-		>$(DESTDIR)$(PREFIX)/share/applications/sc.desktop
+	sed 's|^Exec=pulseControl$$|Exec=$(PREFIX)/bin/pulseControl|' data/pulseControl.desktop \
+		>$(DESTDIR)$(PREFIX)/share/applications/pulseControl.desktop
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/sc \
-		$(DESTDIR)$(PREFIX)/share/applications/sc.desktop
+	rm -f $(DESTDIR)$(PREFIX)/bin/pulseControl \
+		$(DESTDIR)$(PREFIX)/share/applications/pulseControl.desktop
 
 # Needs a built mwc next to this directory, or in MWC_DIR, plus grim, pactl and
 # pulseaudio. It runs its own server with null sinks and leaves real volumes alone.
-test: sc
+test: pulseControl
 	tests/ui.sh
 
 clean:
-	rm -rf sc build
+	rm -rf pulseControl build
 
 .PHONY: all install uninstall test clean

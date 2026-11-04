@@ -1,11 +1,11 @@
-# sc – minimale Lautstärkeregelung für PulseAudio unter Wayland (passend zu mwc)
+# pulseControl – minimale Lautstärkeregelung für PulseAudio unter Wayland (passend zu mwc)
 
 Eine C-Datei, nur libpulse, libwayland, xkbcommon, Cairo und Pango, kein Toolkit.
 Motif-Look wie [mfm](https://github.com/reygnn/mfm), mit denselben Farben wie
 [mwc](https://github.com/reygnn/mwc): `MWC_INACTIVE` / `MWC_ACTIVE` aus der Umgebung,
 sonst `Mwm*background` / `Mwm*activeBackground` aus `~/.config/mwc/mwmrc`.
 
-sc regelt den Standard-Ausgang. Wechselt der oder ändert ein anderes Programm die
+pulseControl regelt den Standard-Ausgang. Wechselt der oder ändert ein anderes Programm die
 Lautstärke, zieht das Fenster nach. Es spricht das Pulse-Protokoll, läuft also auch
 mit `pipewire-pulse`.
 
@@ -14,7 +14,7 @@ mit `pipewire-pulse`.
     sudo apt install build-essential pkg-config libpulse-dev libwayland-dev \
         wayland-protocols libxkbcommon-dev libcairo2-dev libpango1.0-dev
     make
-    sudo make install        # -> /usr/local/bin/sc
+    sudo make install        # -> /usr/local/bin/pulseControl
 
 ## Bedienung
 
@@ -29,13 +29,13 @@ mit `pipewire-pulse`.
 Mit Alt, Super oder Ctrl gedrückt wirkt keine dieser Tasten, außer Ctrl+Q und Ctrl+W.
 Die Lautstärketasten der Tastatur wirken, solange das Fenster den Fokus hat.
 
-Der Regler endet bei 100 %. Hat ein anderes Programm mehr eingestellt, zeigt sc den
+Der Regler endet bei 100 %. Hat ein anderes Programm mehr eingestellt, zeigt pulseControl den
 Wert an und kann ihn senken, hebt aber nichts über 100 % an: Der Wert bleibt, bis man
 den Regler nach links zieht oder leiser stellt. Die Balance zwischen den
 Kanälen bleibt erhalten, auch wenn man über 0 % zieht. Lautstärke ändern hebt die
 Stummschaltung nicht auf.
 
-Ist kein Server erreichbar, steht das in der Statuszeile. sc versucht es dann jede
+Ist kein Server erreichbar, steht das in der Statuszeile. pulseControl versucht es dann jede
 Sekunde wieder, startet aber selbst keinen.
 
 ## Umgebung
@@ -50,7 +50,7 @@ Sekunde wieder, startet aber selbst keinen.
 
     make test
 
-fährt sc unter einem headless laufenden mwc mit simulierter Maus und Tastatur, gegen
+fährt pulseControl unter einem headless laufenden mwc mit simulierter Maus und Tastatur, gegen
 einen eigenen PulseAudio-Server mit zwei Null-Sinks, und prüft mit `pactl` und
 Screenshots. Die echte Lautstärke bleibt unberührt. Es braucht einen gebauten mwc samt
 `build/vinput` und `build/pngtool` in `MWC_DIR` (sonst `../mwc` oder `../mwm`), `grim`,

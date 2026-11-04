@@ -1,16 +1,16 @@
 #!/bin/bash
-# Black-box test of sc: a headless mwc with simulated mouse and keyboard, and a
+# Black-box test of pulseControl: a headless mwc with simulated mouse and keyboard, and a
 # private PulseAudio server with two null sinks. Results are checked with pactl and
 # in screenshots. It has its own sockets, and touches neither a running session nor
 # the volume of the real sound card.
 #
 # Needs a built mwc with build/vinput and build/pngtool in MWC_DIR (by default
 # ../mwc or ../mwm), grim, pactl and pulseaudio (PA_MODULES names its module directory,
-# if it isn't in the usual place). Output goes to build/ui.log, sc's own to build/ui-sc.log.
+# if it isn't in the usual place). Output goes to build/ui.log, pulseControl's own to build/ui-pulseControl.log.
 SC_DIR=$(cd "$(dirname "$0")/.." && pwd)
-SC=${SC:-$SC_DIR/sc}
+SC=${SC:-$SC_DIR/pulseControl}
 LOG=$SC_DIR/build/ui.log
-SC_LOG=$SC_DIR/build/ui-sc.log
+SC_LOG=$SC_DIR/build/ui-pulseControl.log
 if [ -z "${MWC_DIR:-}" ]; then
 	MWC_DIR=$SC_DIR/../mwc
 	[ -d "$MWC_DIR" ] || MWC_DIR=$SC_DIR/../mwm
@@ -110,11 +110,11 @@ wait_pixel() { # <description> <x> <y> <rrggbb>
 sc_start() {
 	WAYLAND_DISPLAY=wayland-0 "$SC" >>"$SC_LOG" 2>&1 &
 	SC_PID=$!
-	check "sc has a focused window" '[ "$(get sc kbfocus)" = 1 ]'
-	CX=$(($(get sc x) + B))
-	CY=$(($(get sc y) + T + B))
-	W=$(get sc w)
-	H=$(get sc h)
+	check "pulseControl has a focused window" '[ "$(get pulseControl kbfocus)" = 1 ]'
+	CX=$(($(get pulseControl x) + B))
+	CY=$(($(get pulseControl y) + T + B))
+	W=$(get pulseControl w)
+	H=$(get pulseControl h)
 	BARH=$(((H - 16) / 2))
 	# In the window: the scale's inner x range and a row through it, below the
 	# middle so that the slider's groove doesn't matter.
@@ -143,16 +143,16 @@ sc_exits() {
 		kill -0 "$SC_PID" 2>/dev/null || break
 		sleep 0.1
 	done
-	kill -0 "$SC_PID" 2>/dev/null && fail "$1: sc is still running"
+	kill -0 "$SC_PID" 2>/dev/null && fail "$1: pulseControl is still running"
 	wait "$SC_PID"
 	status=$?
-	[ "$status" = 0 ] || fail "$1: sc exited with status $status"
+	[ "$status" = 0 ] || fail "$1: pulseControl exited with status $status"
 }
 
 sc_quit() {
 	do_input key q
 	sc_exits q
-	check "q closes the window" '[ -z "$(get sc w)" ]'
+	check "q closes the window" '[ -z "$(get pulseControl w)" ]'
 }
 
 # status_has <description> <rrggbb>: text in that colour in the status line, for
@@ -172,7 +172,7 @@ status_has() {
 	fail "$1: no $2 in the status line"
 }
 
-sc_is_client() { pactl list short clients 2>/dev/null | grep -qw sc; }
+sc_is_client() { pactl list short clients 2>/dev/null | grep -qw pulseControl; }
 
 # Where a percentage puts the middle of the slider, in the window.
 thumb_mid() { echo $((S0 + (S1 - S0 - 30) * $1 / 100 + 15)); }
@@ -191,7 +191,7 @@ pactl set-sink-volume first 50%
 pactl set-sink-volume second 10%
 
 sc_start
-check "mwc gave it a frame" '[ "$(get sc frame)" = 1 ]'
+check "mwc gave it a frame" '[ "$(get pulseControl frame)" = 1 ]'
 wait_pixel "the scale is filled up to the slider" $(($(thumb_mid 50) - 20)) "$ROW" "$SEL"
 wait_pixel "and empty behind it" $(($(thumb_mid 50) + 20)) "$ROW" "$TROUGH"
 
@@ -216,7 +216,7 @@ do_input key alt+q
 do_input key ctrl+m
 do_input key w
 sleep 0.2
-kill -0 "$SC_PID" 2>/dev/null || fail "alt+q or w ended sc"
+kill -0 "$SC_PID" 2>/dev/null || fail "alt+q or w ended pulseControl"
 expect_mute "ctrl+m doesn't mute" first no
 
 # Changing the volume leaves the muting alone.
@@ -383,7 +383,7 @@ sleep 1.5
 kill -STOP "$pid"
 sleep 1.5
 pa_start
-wait_for "sc reconnects without any Wayland event" sc_is_client
+wait_for "pulseControl reconnects without any Wayland event" sc_is_client
 kill -CONT "$pid"
 pactl set-sink-volume first 30%
 wait_pixel "with a server back it comes back" $((S0 + 2)) "$ROW" "$SEL"
@@ -396,7 +396,7 @@ expect_vol "and works" first 35 35
 for combo in Escape q ctrl+w; do
 	do_input key "$combo"
 	sc_exits "$combo"
-	check "$combo closes the window" '[ -z "$(get sc w)" ]'
+	check "$combo closes the window" '[ -z "$(get pulseControl w)" ]'
 	[ "$combo" = ctrl+w ] || sc_start
 done
 

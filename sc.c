@@ -1,5 +1,5 @@
 /*
- * sc - a minimal volume control for PulseAudio on Wayland, in the Motif look
+ * pulseControl - a minimal volume control for PulseAudio on Wayland, in the Motif look
  * of mwc (https://github.com/reygnn/mwc) and mfm.
  *
  * libpulse, libwayland, xkbcommon, Pango and Cairo, one file, no toolkit. It
@@ -14,7 +14,7 @@
  * Mouse:  click or drag the scale, wheel anywhere, click the speaker to mute.
  *
  * The scale ends at 100 %. A volume above that (set by another program) is
- * shown and can be lowered, but sc does not raise anything past 100 %.
+ * shown and can be lowered, but pulseControl does not raise anything past 100 %.
  *
  * Everything runs in one thread: Pulse's main loop does the waiting, and its
  * poll function watches the Wayland socket as well.
@@ -169,12 +169,12 @@ static struct shmbuf *buf_new(int w, int h)
 	int stride = cairo_format_stride_for_width(CAIRO_FORMAT_RGB24, w);
 	size_t size = (size_t)stride * h;
 	struct shmbuf *b = calloc(1, sizeof *b);
-	int fd = memfd_create("sc", MFD_CLOEXEC);
+	int fd = memfd_create("pulseControl", MFD_CLOEXEC);
 	void *data = MAP_FAILED;
 	if (b && fd >= 0 && ftruncate(fd, size) == 0)
 		data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (data == MAP_FAILED) {
-		fprintf(stderr, "sc: no memory for a %dx%d buffer: %s\n", w, h,
+		fprintf(stderr, "pulseControl: no memory for a %dx%d buffer: %s\n", w, h,
 			strerror(errno));
 		exit(1);
 	}
@@ -481,9 +481,9 @@ static void ctx_state(pa_context *c, void *u)
 
 static void ctx_start(void)
 {
-	ctx = pa_context_new(pa_mainloop_get_api(ml), "sc");
+	ctx = pa_context_new(pa_mainloop_get_api(ml), "pulseControl");
 	if (!ctx) {
-		fprintf(stderr, "sc: cannot set up a PulseAudio context\n");
+		fprintf(stderr, "pulseControl: cannot set up a PulseAudio context\n");
 		exit(1);
 	}
 	pa_context_set_state_callback(ctx, ctx_state, NULL);
@@ -1131,8 +1131,8 @@ static void setup_window(void)
 	xdg_surface_add_listener(main_xdg, &main_xdg_listener, NULL);
 	toplevel = xdg_surface_get_toplevel(main_xdg);
 	xdg_toplevel_add_listener(toplevel, &toplevel_listener, NULL);
-	xdg_toplevel_set_app_id(toplevel, "sc");
-	xdg_toplevel_set_title(toplevel, "sc");
+	xdg_toplevel_set_app_id(toplevel, "pulseControl");
+	xdg_toplevel_set_title(toplevel, "pulseControl");
 	/* Room for all of it with the font in use, and a pixel per percent. */
 	int min_w = MAX(220, 2 * PAD + barh + textw("100 %") + 12 + 2 * BEV + THUMB +
 		100);
@@ -1151,7 +1151,7 @@ static void setup_window(void)
 
 static void lost_connection(void)
 {
-	fprintf(stderr, "sc: lost the connection to the compositor: %s\n",
+	fprintf(stderr, "pulseControl: lost the connection to the compositor: %s\n",
 		strerror(wl_display_get_error(dpy)));
 	exit(1);
 }
@@ -1181,7 +1181,7 @@ int main(int argc, char **argv)
 {
 	if (argc > 1) {
 		int help = !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help");
-		fprintf(stderr, "usage: sc\n"
+		fprintf(stderr, "usage: pulseControl\n"
 			"Environment: SC_FONT (default \"Sans 10\"), "
 			"MWC_INACTIVE, MWC_ACTIVE.\n");
 		return help ? 0 : 1;
@@ -1190,18 +1190,18 @@ int main(int argc, char **argv)
 	signal(SIGPIPE, SIG_IGN);       /* as libpulse asks of its programs */
 
 	if (!(dpy = wl_display_connect(NULL))) {
-		fprintf(stderr, "sc: cannot connect to a Wayland compositor\n");
+		fprintf(stderr, "pulseControl: cannot connect to a Wayland compositor\n");
 		return 1;
 	}
 	if (!(xkb = xkb_context_new(XKB_CONTEXT_NO_FLAGS))) {
-		fprintf(stderr, "sc: cannot set up xkbcommon\n");
+		fprintf(stderr, "pulseControl: cannot set up xkbcommon\n");
 		return 1;
 	}
 	struct wl_registry *registry = wl_display_get_registry(dpy);
 	wl_registry_add_listener(registry, &registry_listener, NULL);
 	wl_display_roundtrip(dpy);
 	if (!compositor || !shm || !wm_base) {
-		fprintf(stderr, "sc: the compositor lacks wl_compositor, wl_shm "
+		fprintf(stderr, "pulseControl: the compositor lacks wl_compositor, wl_shm "
 			"or xdg_wm_base\n");
 		return 1;
 	}
@@ -1211,7 +1211,7 @@ int main(int argc, char **argv)
 	wl_surface_commit(surface);
 
 	if (!(ml = pa_mainloop_new())) {
-		fprintf(stderr, "sc: cannot set up the PulseAudio main loop\n");
+		fprintf(stderr, "pulseControl: cannot set up the PulseAudio main loop\n");
 		return 1;
 	}
 	pa_mainloop_set_poll_func(ml, poll_both, NULL);
@@ -1265,7 +1265,7 @@ int main(int argc, char **argv)
 		if (pa_mainloop_prepare(ml, timeout) < 0 ||
 		    (pa_mainloop_poll(ml) < 0 && errno != EINTR)) {
 			wl_display_cancel_read(dpy);
-			fprintf(stderr, "sc: the PulseAudio main loop failed\n");
+			fprintf(stderr, "pulseControl: the PulseAudio main loop failed\n");
 			return 1;
 		}
 		if (wl_revents & (POLLIN | POLLERR | POLLHUP)) {
@@ -1275,7 +1275,7 @@ int main(int argc, char **argv)
 			wl_display_cancel_read(dpy);
 		}
 		if (pa_mainloop_dispatch(ml) < 0) {
-			fprintf(stderr, "sc: the PulseAudio main loop failed\n");
+			fprintf(stderr, "pulseControl: the PulseAudio main loop failed\n");
 			return 1;
 		}
 	}
