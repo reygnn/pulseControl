@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=sc
+Comment=Minimal volume control in the Motif look
+Exec=sc
+Icon=multimedia-volume-control
+Terminal=false
+Categories=AudioVideo;Audio;Mixer;
