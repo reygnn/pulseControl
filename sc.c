@@ -2,9 +2,9 @@
  * sc - a minimal volume control for PulseAudio on Wayland, in the Motif look
  * of mwc (https://github.com/reygnn/mwc) and mfm.
  *
- * libpulse, libwayland, Pango and Cairo, one file, no toolkit. It controls the
- * default output and follows it when it changes, or when something else
- * changes its volume. It reads the same colours as mwc: MWC_INACTIVE /
+ * libpulse, libwayland, xkbcommon, Pango and Cairo, one file, no toolkit. It
+ * controls the default output and follows it when it changes, or when something
+ * else changes its volume. It reads the same colours as mwc: MWC_INACTIVE /
  * MWC_ACTIVE from the environment, else Mwm*background and Mwm*activeBackground
  * from ~/.config/mwc/mwmrc, else the Motif defaults.
  *
@@ -341,7 +341,7 @@ static void theme_init(void)
 	px_sel = setting("MWC_ACTIVE", "activeBackground", 0x7387ad);
 	xc_fg = fg;
 	xc_dim = mix(bg, fg, 0.6f);
-	xc_err = 0x8a0303;
+	xc_err = fg == 0xffffff ? 0xffa0a0 : 0x8a0303; /* readable on dark themes */
 
 	const char *f = getenv("SC_FONT");
 	PangoFontDescription *desc =
@@ -376,13 +376,17 @@ static void sink_info(pa_context *c, const pa_sink_info *i, int eol, void *u)
 	}
 	pa_volume_t vol = pa_cvolume_max(&i->volume);
 	if (vol != PA_VOLUME_MUTED || sink_state != SINK_OK ||
-	    i->index != sink_idx)
+	    i->index != sink_idx || i->volume.channels != sink_shape.channels)
 		sink_shape = i->volume;
 	sink_idx = i->index;
 	sink_mute = i->mute;
 	sink_pct = ((uint64_t)vol * 100 + PA_VOLUME_NORM / 2) / PA_VOLUME_NORM;
 	sink_state = SINK_OK;
-	char *d = pa_utf8_filter(i->description ? i->description : i->name);
+	/* Cut first: cutting afterwards could split a character, and Pango takes
+	 * valid UTF-8 only. */
+	char cut[sizeof sink_desc];
+	snprintf(cut, sizeof cut, "%s", i->description ? i->description : i->name);
+	char *d = pa_utf8_filter(cut);
 	snprintf(sink_desc, sizeof sink_desc, "%s", d ? d : "");
 	pa_xfree(d);
 }
@@ -689,6 +693,9 @@ static void scale_to(int x)
 {
 	int p = ((x - drag_off - r_scale.x - BEV) * 100 + scale_travel() / 2) /
 		scale_travel();
+	/* The slider's end is not the volume, if that is above 100 %. */
+	if (sink_pct > 100 && p >= 100)
+		return;
 	set_percent(MAX(MIN(p, 100), 0));
 }
 
@@ -701,32 +708,56 @@ static void end_drag(void)
 		refresh();
 }
 
+static int mod_on(const char *name)
+{
+	return xkb_state_mod_name_is_active(kb_state, name,
+		XKB_STATE_MODS_EFFECTIVE) > 0;
+}
+
+/* Alt, Super and Ctrl make a key mean something else: Alt+Q must not quit.
+ * Shift doesn't, as + takes it on many layouts. */
+static int plain_key(void)
+{
+	return !mod_on(XKB_MOD_NAME_ALT) && !mod_on(XKB_MOD_NAME_LOGO) &&
+		!mod_on(XKB_MOD_NAME_CTRL);
+}
+
 static void key_action(xkb_keysym_t ks)
 {
+	switch (ks) {       /* the keyboard's volume keys mean only that */
+	case XKB_KEY_XF86AudioRaiseVolume:
+		step_volume(STEP);
+		return;
+	case XKB_KEY_XF86AudioLowerVolume:
+		step_volume(-STEP);
+		return;
+	case XKB_KEY_XF86AudioMute:
+		toggle_mute();
+		return;
+	}
+	if (mod_on(XKB_MOD_NAME_CTRL) && !mod_on(XKB_MOD_NAME_ALT) &&
+	    !mod_on(XKB_MOD_NAME_LOGO) &&
+	    (ks == XKB_KEY_q || ks == XKB_KEY_Q || ks == XKB_KEY_w ||
+	     ks == XKB_KEY_W))
+		exit(0);
+	if (!plain_key())
+		return;
 	switch (ks) {
 	case XKB_KEY_Up: case XKB_KEY_KP_Up:
 	case XKB_KEY_Right: case XKB_KEY_KP_Right:
 	case XKB_KEY_plus: case XKB_KEY_KP_Add:
-	case XKB_KEY_XF86AudioRaiseVolume:
 		step_volume(STEP);
 		break;
 	case XKB_KEY_Down: case XKB_KEY_KP_Down:
 	case XKB_KEY_Left: case XKB_KEY_KP_Left:
 	case XKB_KEY_minus: case XKB_KEY_KP_Subtract:
-	case XKB_KEY_XF86AudioLowerVolume:
 		step_volume(-STEP);
 		break;
 	case XKB_KEY_m: case XKB_KEY_M: case XKB_KEY_space:
-	case XKB_KEY_XF86AudioMute:
 		toggle_mute();
 		break;
 	case XKB_KEY_q: case XKB_KEY_Q: case XKB_KEY_Escape:
 		exit(0);
-	case XKB_KEY_w: case XKB_KEY_W:
-		if (xkb_state_mod_name_is_active(kb_state, XKB_MOD_NAME_CTRL,
-		    XKB_STATE_MODS_EFFECTIVE) > 0)
-			exit(0);
-		break;
 	}
 }
 
@@ -734,15 +765,16 @@ static void key_action(xkb_keysym_t ks)
 static int key_repeats(uint32_t kc)
 {
 	switch (xkb_state_key_get_one_sym(kb_state, kc)) {
+	case XKB_KEY_XF86AudioRaiseVolume:
+	case XKB_KEY_XF86AudioLowerVolume:
+		return 1;
 	case XKB_KEY_Up: case XKB_KEY_KP_Up:
 	case XKB_KEY_Right: case XKB_KEY_KP_Right:
 	case XKB_KEY_plus: case XKB_KEY_KP_Add:
-	case XKB_KEY_XF86AudioRaiseVolume:
 	case XKB_KEY_Down: case XKB_KEY_KP_Down:
 	case XKB_KEY_Left: case XKB_KEY_KP_Left:
 	case XKB_KEY_minus: case XKB_KEY_KP_Subtract:
-	case XKB_KEY_XF86AudioLowerVolume:
-		return 1;
+		return plain_key();
 	}
 	return 0;
 }
@@ -795,10 +827,12 @@ static void kb_key(void *data, struct wl_keyboard *k, uint32_t serial,
 			repeat_kc = 0;
 		return;
 	}
-	repeat_kc = 0;
+	/* A modifier does not stop a key that is repeating. */
+	int repeats = xkb_keymap_key_repeats(kb_map, kc);
+	if (repeats)
+		repeat_kc = 0;
 	key_action(xkb_state_key_get_one_sym(kb_state, kc));
-	if (repeat_rate > 0 && xkb_keymap_key_repeats(kb_map, kc) &&
-	    key_repeats(kc)) {
+	if (repeats && repeat_rate > 0 && key_repeats(kc)) {
 		repeat_kc = kc;
 		repeat_next = now_ms() + repeat_delay;
 	}
@@ -861,9 +895,11 @@ static void ptr_leave(void *data, struct wl_pointer *p, uint32_t serial,
 static void ptr_motion(void *data, struct wl_pointer *p, uint32_t time,
 	wl_fixed_t x, wl_fixed_t y)
 {
+	int old_x = ptr_x;
 	ptr_x = wl_fixed_to_int(x);
 	ptr_y = wl_fixed_to_int(y);
-	if (dragging)
+	/* Only sideways: a hand's jitter must not change a grabbed slider. */
+	if (dragging && ptr_x != old_x)
 		scale_to(ptr_x);
 	if (btn_pressed && !in(r_btn, ptr_x, ptr_y)) {
 		btn_pressed = 0;
@@ -965,6 +1001,9 @@ static void seat_capabilities(void *data, struct wl_seat *s, uint32_t caps)
 		pointer = wl_seat_get_pointer(s);
 		wl_pointer_add_listener(pointer, &pointer_listener, NULL);
 	} else if (!want_ptr && pointer) {
+		end_drag();
+		btn_pressed = 0;
+		dirty = 1;
 		wl_pointer_release(pointer);
 		pointer = NULL;
 		ptr_surface = NULL;
@@ -1094,7 +1133,11 @@ static void setup_window(void)
 	xdg_toplevel_add_listener(toplevel, &toplevel_listener, NULL);
 	xdg_toplevel_set_app_id(toplevel, "sc");
 	xdg_toplevel_set_title(toplevel, "sc");
-	xdg_toplevel_set_min_size(toplevel, 220, min_h);
+	/* Room for all of it with the font in use, and a pixel per percent. */
+	int min_w = MAX(220, 2 * PAD + barh + textw("100 %") + 12 + 2 * BEV + THUMB +
+		100);
+	float_w = W = MAX(float_w, min_w);
+	xdg_toplevel_set_min_size(toplevel, min_w, min_h);
 	if (deco_mgr) {
 		struct zxdg_toplevel_decoration_v1 *d =
 			zxdg_decoration_manager_v1_get_toplevel_decoration(deco_mgr,
@@ -1178,10 +1221,12 @@ int main(int argc, char **argv)
 		if (wl_display_dispatch_pending(dpy) < 0)
 			lost_connection();
 		uint64_t now = now_ms();
+		if (!ctx && now >= retry_at)
+			ctx_start();
+		/* Also right after a start that failed at once: the wait below
+		 * needs to see no context, to wake for the next attempt. */
 		if (ctx_failed)
 			ctx_drop();
-		else if (!ctx && now >= retry_at)
-			ctx_start();
 		if (repeat_kc && now >= repeat_next) {
 			if (key_repeats(repeat_kc))
 				key_action(xkb_state_key_get_one_sym(kb_state,

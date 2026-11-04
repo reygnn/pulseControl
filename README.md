@@ -26,10 +26,12 @@ mit `pipewire-pulse`.
 | m / Leertaste / Klick auf den Lautsprecher | stumm ein/aus |
 | Esc / q / Ctrl+Q / Ctrl+W | beenden |
 
+Mit Alt, Super oder Ctrl gedrückt wirkt keine dieser Tasten, außer Ctrl+Q und Ctrl+W.
 Die Lautstärketasten der Tastatur wirken, solange das Fenster den Fokus hat.
 
 Der Regler endet bei 100 %. Hat ein anderes Programm mehr eingestellt, zeigt sc den
-Wert an und kann ihn senken, hebt aber nichts über 100 % an. Die Balance zwischen den
+Wert an und kann ihn senken, hebt aber nichts über 100 % an: Der Wert bleibt, bis man
+den Regler nach links zieht oder leiser stellt. Die Balance zwischen den
 Kanälen bleibt erhalten, auch wenn man über 0 % zieht. Lautstärke ändern hebt die
 Stummschaltung nicht auf.
 
@@ -52,4 +54,13 @@ fährt sc unter einem headless laufenden mwc mit simulierter Maus und Tastatur, 
 einen eigenen PulseAudio-Server mit zwei Null-Sinks, und prüft mit `pactl` und
 Screenshots. Die echte Lautstärke bleibt unberührt. Es braucht einen gebauten mwc samt
 `build/vinput` und `build/pngtool` in `MWC_DIR` (sonst `../mwc` oder `../mwm`), `grim`,
-`pactl` und `pulseaudio`.
+`pactl` und `pulseaudio`; liegen dessen Module woanders, nennt `PA_MODULES` den Ordner.
+
+Läuft auf dem Rechner `pipewire-pulse`, gehört `pulseaudio` nicht auf den Host, denn
+apt würde dafür `pipewire-alsa` entfernen. Besser in der Entwicklungsbox von mwc:
+
+    sudo apt install libpulse-dev pulseaudio pulseaudio-utils grim
+
+## Lizenz
+
+MIT, siehe [LICENSE](LICENSE).
