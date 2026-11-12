@@ -16,6 +16,8 @@ mit `pipewire-pulse`.
     make
     sudo make install        # -> /usr/local/bin/pulseControl
 
+`pulseControl -v` gibt die Version aus.
+
 ## Bedienung
 
 | Eingabe | Aktion |

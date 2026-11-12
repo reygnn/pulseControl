@@ -22,7 +22,7 @@ SC_LIBS = $(shell $(PKG_CONFIG) --libs $(PKGS))
 
 all: pulseControl
 
-pulseControl: sc.c $(PROTO_H) $(PROTO_C)
+pulseControl: sc.c version.h $(PROTO_H) $(PROTO_C)
 	$(CC) $(SC_CFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ sc.c $(PROTO_C) $(SC_LIBS) $(LDLIBS)
 
 build:

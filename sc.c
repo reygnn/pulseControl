@@ -43,6 +43,8 @@
 #include <wayland-client.h>
 #include <wayland-cursor.h>
 #include <xkbcommon/xkbcommon.h>
+
+#include "version.h"
 #include <xkbcommon/xkbcommon-keysyms.h>
 
 #include "xdg-decoration-unstable-v1-client-protocol.h"
@@ -1309,9 +1311,13 @@ static int poll_both(struct pollfd *ufds, unsigned long nfds, int timeout,
 
 int main(int argc, char **argv)
 {
+	if (argc == 2 && !strcmp(argv[1], "-v")) {
+		printf("pulseControl %s\n", PULSECONTROL_VERSION);
+		return 0;
+	}
 	if (argc > 1) {
 		int help = !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help");
-		fprintf(stderr, "usage: pulseControl\n"
+		fprintf(stderr, "usage: pulseControl [-v]\n"
 			"Environment: SC_FONT (default \"Sans 10\"), "
 			"MWC_INACTIVE, MWC_ACTIVE.\n");
 		return help ? 0 : 1;
