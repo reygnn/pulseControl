@@ -4,7 +4,7 @@
 # in screenshots. It has its own sockets, and touches neither a running session nor
 # the volume of the real sound card.
 #
-# Needs a built mwc with build/vinput and build/pngtool in MWC_DIR (by default
+# Needs a built mwc with build/vinput, build/pngtool and build/xdgc in MWC_DIR (by default
 # ../mwc or ../mwm), grim, pactl and pulseaudio (PA_MODULES names its module directory,
 # if it isn't in the usual place). Output goes to build/ui.log, pulseControl's own to build/ui-pulseControl.log.
 SC_DIR=$(cd "$(dirname "$0")/.." && pwd)
@@ -20,7 +20,7 @@ fi
 cd "$MWC_DIR" || exit 1
 . tests/lib.sh
 require_tools grim pactl pulseaudio
-for tool in build/vinput build/pngtool; do
+for tool in build/vinput build/pngtool build/xdgc; do
 	[ -x "$tool" ] || { echo "FAIL: $MWC_DIR/$tool not built (make $tool)"; exit 1; }
 done
 
@@ -191,6 +191,9 @@ thumb_mid() { echo $((S0 + (S1 - S0 - 30) * $1 / 100 + 15)); }
 # A compositor left stopped would hang the screenshot and the cleanup.
 trap 'kill -CONT "$pid" 2>/dev/null; WAYLAND_DISPLAY=wayland-0 grim "$ERR_SHOT" 2>/dev/null; cleanup' EXIT
 
+# The window that takes the keyboard away stays clear of pulseControl.
+mkdir -p "$XDG_CONFIG_HOME/mwc"
+printf 'Mwm*thief*geometry: -0-0\n' >"$XDG_CONFIG_HOME/mwc/mwmrc"
 start_mwc 'touch "$SMOKE_DIR/up"; exec sleep 600'
 wait_for "mwc is up" test -e "$SMOKE_DIR/up"
 start_vinput
@@ -206,6 +209,20 @@ sc_start
 echo "ok: no server-side decoration"
 # Its frame: a bevel of 2, then a line of the face, active while it has the keyboard.
 pixel_is "the frame is in the active colour" $((WX + 2)) $((CY + ROW)) "$SEL"
+# Another window, in the far corner, takes the keyboard, and gives it back.
+WAYLAND_DISPLAY=wayland-0 "$MWC_DIR/build/xdgc" app=thief size=200x100 \
+	>"$SMOKE_DIR/thief.log" 2>&1 &
+PID_thief=$!
+check "another window takes the keyboard" \
+	"[ \"\$(get thief kbfocus)\" = 1 ] && [ \"\$(get pulseControl kbfocus)\" = 0 ]"
+pixel_is "without it the frame is inactive" $((WX + 2)) $((CY + ROW)) aeb2c3
+kill "$PID_thief" 2>/dev/null
+wait "$PID_thief" 2>/dev/null
+do_input move $((CX + 20)) $((CY + H - 10))
+do_input click left
+check "a click on the status line gives the keyboard back" \
+	"[ \"\$(get pulseControl kbfocus)\" = 1 ]"
+pixel_is "and the frame is active again" $((WX + 2)) $((CY + ROW)) "$SEL"
 wait_pixel "the scale is filled up to the slider" $(($(thumb_mid 50) - 20)) "$ROW" "$SEL"
 wait_pixel "and empty behind it" $(($(thumb_mid 50) + 20)) "$ROW" "$TROUGH"
 

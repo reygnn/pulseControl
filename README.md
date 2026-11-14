@@ -65,7 +65,7 @@ Aktiv-Farbe, wie bei mwcs Fenstern. Wo es steht, legt `geometry` in mwc fest.
 fährt pulseControl unter einem headless laufenden mwc mit simulierter Maus und Tastatur, gegen
 einen eigenen PulseAudio-Server mit zwei Null-Sinks, und prüft mit `pactl` und
 Screenshots. Die echte Lautstärke bleibt unberührt. Es braucht einen gebauten mwc samt
-`build/vinput` und `build/pngtool` in `MWC_DIR` (sonst `../mwc` oder `../mwm`), `grim`,
+`build/vinput`, `build/pngtool` und `build/xdgc` in `MWC_DIR` (sonst `../mwc` oder `../mwm`), `grim`,
 `pactl` und `pulseaudio`; liegen dessen Module woanders, nennt `PA_MODULES` den Ordner.
 
 Läuft auf dem Rechner `pipewire-pulse`, gehört `pulseaudio` nicht auf den Host, denn

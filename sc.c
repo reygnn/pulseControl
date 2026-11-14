@@ -1172,6 +1172,9 @@ static void seat_capabilities(void *data, struct wl_seat *s, uint32_t caps)
 		wl_keyboard_release(keyboard);
 		keyboard = NULL;
 		repeat_kc = 0;
+		/* Gone without a leave: no keyboard, no active frame. */
+		focused = 0;
+		dirty = 1;
 	}
 }
 
@@ -1350,7 +1353,8 @@ int main(int argc, char **argv)
 	}
 	struct wl_registry *registry = wl_display_get_registry(dpy);
 	wl_registry_add_listener(registry, &registry_listener, NULL);
-	wl_display_roundtrip(dpy);
+	if (wl_display_roundtrip(dpy) < 0)
+		lost_connection();
 	if (!compositor || !shm || !wm_base) {
 		fprintf(stderr, "pulseControl: the compositor lacks wl_compositor, wl_shm "
 			"or xdg_wm_base\n");
@@ -1397,11 +1401,14 @@ int main(int argc, char **argv)
 			continue;       /* events arrived in the meantime */
 		wl_events = POLLIN;
 		if (wl_display_flush(dpy) < 0) {
-			if (errno != EAGAIN) {
+			/* EPIPE: the compositor has closed, but may have said why first.
+			 * Reading that error makes libwayland report it. */
+			if (errno != EAGAIN && errno != EPIPE) {
 				wl_display_cancel_read(dpy);
 				lost_connection();
 			}
-			wl_events |= POLLOUT;
+			if (errno == EAGAIN)
+				wl_events |= POLLOUT;
 		}
 		int timeout = -1;
 		if (!ctx || repeat_kc) {
