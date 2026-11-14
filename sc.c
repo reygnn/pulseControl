@@ -18,6 +18,10 @@
  * The scale ends at 100 %. A volume above that (set by another program) is
  * shown and can be lowered, but pulseControl does not raise anything past 100 %.
  *
+ * It asks for no server-side decoration and draws its own frame: only mwm's thin
+ * border, no title bar, no buttons, no resize handles. The border takes the active
+ * colour while it has the keyboard, as mwc's frames do.
+ *
  * Everything runs in one thread: Pulse's main loop does the waiting, and its
  * poll function watches the Wayland socket as well.
  */
@@ -47,11 +51,11 @@
 #include "version.h"
 #include <xkbcommon/xkbcommon-keysyms.h>
 
-#include "xdg-decoration-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
 #define BEV 2           /* bevel width, as in mwm */
 #define PAD 6
+#define FRAME (BEV + 1) /* mwm's border without resize handles, as mwc draws it */
 #define FIELD_PAD 8     /* around the text in the volume field */
 #define THUMB 30        /* width of the scale's slider */
 #define STEP 5          /* percent per key press or wheel step */
@@ -108,7 +112,6 @@ static struct wl_compositor *compositor;
 static struct wl_shm *shm;
 static struct wl_seat *seat;
 static struct xdg_wm_base *wm_base;
-static struct zxdg_decoration_manager_v1 *deco_mgr;
 static struct wl_surface *surface;
 static struct wl_callback *frame;       /* a frame is on its way */
 static struct shmbuf *bufs[2];
@@ -136,6 +139,7 @@ static uint64_t repeat_next;
 static int repeat_rate = 25, repeat_delay = 600;
 
 static int W = 320, H, float_w = 320, min_h;
+static int focused;             /* it has the keyboard: the active frame */
 static uint32_t px_bg, px_top, px_bot, px_trough, px_sel, px_list, px_paper;
 static uint32_t xc_fg, xc_dim, xc_err;
 static cairo_t *cr;             /* what fill, bevel and text draw on */
@@ -370,7 +374,7 @@ static void theme_init(void)
 	pango_font_metrics_unref(m);
 	pango_font_description_free(desc);
 	barh = font_asc + font_desc + 10;
-	min_h = H = 2 * PAD + 2 * barh + 4;
+	min_h = H = 2 * (FRAME + PAD) + 2 * barh + 4;
 }
 
 /* ---- PulseAudio --------------------------------------------------------- */
@@ -539,16 +543,31 @@ static void fill(uint32_t px, int x, int y, int w, int h)
 	cairo_fill(cr);
 }
 
-static void bevel(struct rect r, int raised)
+static void bevel_in(struct rect r, uint32_t t, uint32_t b)
 {
-	uint32_t t = raised ? px_top : px_bot;
-	uint32_t b = raised ? px_bot : px_top;
 	for (int i = 0; i < BEV; i++) {
 		fill(t, r.x + i, r.y + i, r.w - 2 * i, 1);
 		fill(t, r.x + i, r.y + i, 1, r.h - 2 * i);
 		fill(b, r.x + i + 1, r.y + r.h - 1 - i, r.w - 2 * i - 1, 1);
 		fill(b, r.x + r.w - 1 - i, r.y + i + 1, 1, r.h - 2 * i - 1);
 	}
+}
+
+static void bevel(struct rect r, int raised)
+{
+	bevel_in(r, raised ? px_top : px_bot, raised ? px_bot : px_top);
+}
+
+/* mwm's thin border: a raised bevel and one line of the face inside it. */
+static void draw_frame(void)
+{
+	uint32_t face = focused ? px_sel : px_bg;
+	fill(face, 0, 0, W, FRAME);
+	fill(face, 0, H - FRAME, W, FRAME);
+	fill(face, 0, 0, FRAME, H);
+	fill(face, W - FRAME, 0, FRAME, H);
+	bevel_in((struct rect){ 0, 0, W, H }, mix(face, 0xffffff, 0.55f),
+		mix(face, 0x000000, 0.5f));
 }
 
 static int textw(const char *s)
@@ -583,11 +602,12 @@ static void layout(void)
 		pw = MAX(pw, textw(s));
 	}
 	pw += 2 * BEV + FIELD_PAD;
-	r_btn = (struct rect){ PAD, PAD, barh, barh };
-	r_pct = (struct rect){ W - PAD - pw, PAD, pw, barh };
-	r_scale = (struct rect){ PAD + barh + 4, PAD,
-		W - 2 * PAD - barh - pw - 12, barh };
-	r_status = (struct rect){ PAD, H - PAD - barh, W - 2 * PAD, barh };
+	int in = FRAME + PAD;   /* everything sits inside the frame */
+	r_btn = (struct rect){ in, in, barh, barh };
+	r_pct = (struct rect){ W - in - pw, in, pw, barh };
+	r_scale = (struct rect){ in + barh + 4, in,
+		W - 2 * in - barh - pw - 12, barh };
+	r_status = (struct rect){ in, H - in - barh, W - 2 * in, barh };
 }
 
 static int scale_travel(void)
@@ -638,6 +658,7 @@ static void paint(void)
 	int ok = sink_state == SINK_OK;
 	layout();
 	fill(px_bg, 0, 0, W, H);
+	draw_frame();
 
 	/* mute button: stays in while muted */
 	int down = (ok && sink_mute) != btn_pressed;
@@ -932,11 +953,15 @@ static void kb_keymap(void *data, struct wl_keyboard *k, uint32_t format,
 static void kb_enter(void *data, struct wl_keyboard *k, uint32_t serial,
 	struct wl_surface *s, struct wl_array *keys)
 {
+	focused = 1;
+	dirty = 1;
 }
 
 static void kb_leave(void *data, struct wl_keyboard *k, uint32_t serial,
 	struct wl_surface *s)
 {
+	focused = 0;
+	dirty = 1;
 	repeat_kc = 0;
 	edit_cancel();
 }
@@ -1183,9 +1208,6 @@ static void registry_global(void *data, struct wl_registry *r, uint32_t name,
 		wm_base = wl_registry_bind(r, name, &xdg_wm_base_interface,
 			MIN(ver, 2));
 		xdg_wm_base_add_listener(wm_base, &wm_base_listener, NULL);
-	} else if (!strcmp(iface, zxdg_decoration_manager_v1_interface.name)) {
-		deco_mgr = wl_registry_bind(r, name,
-			&zxdg_decoration_manager_v1_interface, 1);
 	}
 }
 
@@ -1266,17 +1288,10 @@ static void setup_window(void)
 	xdg_toplevel_set_app_id(toplevel, "pulseControl");
 	xdg_toplevel_set_title(toplevel, "pulseControl");
 	/* Room for all of it with the font in use, and a pixel per percent. */
-	int min_w = MAX(220, 2 * PAD + barh + textw("100 %") + 2 * BEV + FIELD_PAD + 12 +
+	int min_w = MAX(220, 2 * (FRAME + PAD) + barh + textw("100 %") + 2 * BEV + FIELD_PAD + 12 +
 		2 * BEV + THUMB + 100);
 	float_w = W = MAX(float_w, min_w);
 	xdg_toplevel_set_min_size(toplevel, min_w, min_h);
-	if (deco_mgr) {
-		struct zxdg_toplevel_decoration_v1 *d =
-			zxdg_decoration_manager_v1_get_toplevel_decoration(deco_mgr,
-				toplevel);
-		zxdg_toplevel_decoration_v1_set_mode(d,
-			ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
-	}
 }
 
 /* ---- main loop ---------------------------------------------------------- */

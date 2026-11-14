@@ -7,11 +7,9 @@ PKGS = libpulse wayland-client wayland-cursor xkbcommon cairo pangocairo
 WAYLAND_PROTOCOLS := $(shell $(PKG_CONFIG) --variable=pkgdatadir wayland-protocols)
 WAYLAND_SCANNER := $(shell $(PKG_CONFIG) --variable=wayland_scanner wayland-scanner)
 XDG_SHELL = $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml
-XDG_DECORATION = $(WAYLAND_PROTOCOLS)/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml
 
-PROTO_H = build/xdg-shell-client-protocol.h \
-	build/xdg-decoration-unstable-v1-client-protocol.h
-PROTO_C = build/xdg-shell-protocol.c build/xdg-decoration-unstable-v1-protocol.c
+PROTO_H = build/xdg-shell-client-protocol.h
+PROTO_C = build/xdg-shell-protocol.c
 
 # CFLAGS and LDLIBS stay the user's, also on the command line: `make CFLAGS=-O0`
 # must not lose the include paths.
@@ -33,12 +31,6 @@ build/xdg-shell-client-protocol.h: | build
 
 build/xdg-shell-protocol.c: | build
 	$(WAYLAND_SCANNER) private-code $(XDG_SHELL) $@
-
-build/xdg-decoration-unstable-v1-client-protocol.h: | build
-	$(WAYLAND_SCANNER) client-header $(XDG_DECORATION) $@
-
-build/xdg-decoration-unstable-v1-protocol.c: | build
-	$(WAYLAND_SCANNER) private-code $(XDG_DECORATION) $@
 
 install: pulseControl
 	install -Dm755 pulseControl $(DESTDIR)$(PREFIX)/bin/pulseControl

@@ -111,10 +111,11 @@ sc_start() {
 	WAYLAND_DISPLAY=wayland-0 "$SC" >>"$SC_LOG" 2>&1 &
 	SC_PID=$!
 	check "pulseControl has a focused window" '[ "$(get pulseControl kbfocus)" = 1 ]'
-	CX=$(($(get pulseControl x) + B))
-	CY=$(($(get pulseControl y) + T + B))
-	W=$(get pulseControl w)
-	H=$(get pulseControl h)
+	# Everything below counts from inside its own frame of 3, which mwc doesn't add.
+	WX=$(get pulseControl x) WY=$(get pulseControl y)
+	CX=$((WX + 3)) CY=$((WY + 3))
+	W=$(($(get pulseControl w) - 6))
+	H=$(($(get pulseControl h) - 6))
 	BARH=$(((H - 16) / 2))
 	# In the window: the scale's inner x range and a row through it, below the
 	# middle so that the slider's groove doesn't matter.
@@ -194,14 +195,17 @@ start_mwc 'touch "$SMOKE_DIR/up"; exec sleep 600'
 wait_for "mwc is up" test -e "$SMOKE_DIR/up"
 start_vinput
 refresh
-B=$(global theme border)
-T=$(global theme title)
 pa_start
 pactl set-sink-volume first 50%
 pactl set-sink-volume second 10%
 
 sc_start
-check "mwc gave it a frame" '[ "$(get pulseControl frame)" = 1 ]'
+# Only its own thin frame: mwc adds no border and no title bar.
+[ "$(get pulseControl bw)" = 0 ] && [ "$(get pulseControl th)" = 0 ] ||
+	fail "mwc decorates it: border $(get pulseControl bw), title $(get pulseControl th)"
+echo "ok: no server-side decoration"
+# Its frame: a bevel of 2, then a line of the face, active while it has the keyboard.
+pixel_is "the frame is in the active colour" $((WX + 2)) $((CY + ROW)) "$SEL"
 wait_pixel "the scale is filled up to the slider" $(($(thumb_mid 50) - 20)) "$ROW" "$SEL"
 wait_pixel "and empty behind it" $(($(thumb_mid 50) + 20)) "$ROW" "$TROUGH"
 

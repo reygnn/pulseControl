@@ -46,12 +46,16 @@ Stummschaltung nicht auf.
 Ist kein Server erreichbar, steht das in der Statuszeile. pulseControl versucht es dann jede
 Sekunde wieder, startet aber selbst keinen.
 
+Das Fenster hat nur einen dünnen Motif-Rahmen, den es selbst zeichnet: keine Titelleiste,
+keine Fensterknöpfe, keine Griffe zum Ziehen. Hat es die Tastatur, ist der Rahmen in der
+Aktiv-Farbe, wie bei mwcs Fenstern. Wo es steht, legt `geometry` in mwc fest.
+
 ## Umgebung
 
 | Variable | Standard | |
 |---|---|---|
 | `SC_FONT` | `Sans 10` | Pango-Name, z. B. `Sans Bold 11` |
-| `MWC_INACTIVE`, `MWC_ACTIVE` | `#aeb2c3`, `#7387ad` | Hintergrund, Regler-Füllung |
+| `MWC_INACTIVE`, `MWC_ACTIVE` | `#aeb2c3`, `#7387ad` | Hintergrund, Regler-Füllung und Rahmen mit Fokus |
 | `PULSE_SERVER` | | anderer Sound-Server, wie bei allen Pulse-Programmen |
 
 ## Tests
