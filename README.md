@@ -78,9 +78,10 @@ reads better.
 ## How this is built
 
 pulseControl is developed with Claude (Anthropic) as a coding assistant. I set the
-scope and review the changes; Claude writes most of the code and the tests. `make
-test` drives pulseControl in a headless mwc against a sound server of its own and
-checks it with `pactl` and in screenshots. What is open is written down in CAVEATS.
+scope and the design and review the changes; Claude writes most of the code and the
+tests. `make test` drives pulseControl in a headless mwc against a sound server of its
+own and checks it with `pactl` and in screenshots. What is open is written down in
+CAVEATS.
 
 
 ## Testing
