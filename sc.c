@@ -132,8 +132,11 @@ static int axis_steps;
 static struct wl_surface *cursor_surf;
 static struct wl_cursor_theme *cursor_theme;
 static struct wl_cursor_image *cursor_img;
-static int cursor_scale;
+static int cursor_scale;         /* the window's scale it was loaded at */
+static int cursor_buf_scale;     /* its surface's scale, which divides the image */
+static uint32_t ptr_serial;      /* of the last enter, to set the cursor again */
 static void cursor_load(void);
+static void cursor_set(void);
 
 static struct wl_keyboard *keyboard;
 static struct xkb_context *xkb;
@@ -1037,17 +1040,9 @@ static void ptr_enter(void *data, struct wl_pointer *p, uint32_t serial,
 	ptr_surface = s;
 	ptr_x = wl_fixed_to_int(x);
 	ptr_y = wl_fixed_to_int(y);
+	ptr_serial = serial;
 	cursor_load();
-	if (cursor_img) {
-		wl_pointer_set_cursor(p, serial, cursor_surf,
-			cursor_img->hotspot_x / cursor_scale, cursor_img->hotspot_y / cursor_scale);
-		wl_surface_set_buffer_scale(cursor_surf, cursor_scale);
-		wl_surface_attach(cursor_surf,
-			wl_cursor_image_get_buffer(cursor_img), 0, 0);
-		wl_surface_damage_buffer(cursor_surf, 0, 0, cursor_img->width,
-			cursor_img->height);
-		wl_surface_commit(cursor_surf);
-	}
+	cursor_set();
 }
 
 /* Not every compositor keeps the pointer on a window while a button is held,
@@ -1307,6 +1302,27 @@ static void cursor_load(void)
 		cursor_img = c->images[0];
 	if (!cursor_surf)
 		cursor_surf = wl_compositor_create_surface(compositor);
+	/* A theme need not have the size asked for: 24 at scale 3 gives Adwaita's 64.
+	 * The buffer scale must divide the image, or a compositor may end the client. */
+	cursor_buf_scale = 1;
+	for (int f = buf_scale; cursor_img && f > 1; f--)
+		if (cursor_img->width % f == 0 && cursor_img->height % f == 0) {
+			cursor_buf_scale = f;
+			break;
+		}
+}
+
+/* The cursor on the window, while the pointer is over it. */
+static void cursor_set(void)
+{
+	if (!cursor_img || !pointer || !ptr_surface)
+		return;
+	wl_pointer_set_cursor(pointer, ptr_serial, cursor_surf,
+		cursor_img->hotspot_x / cursor_buf_scale, cursor_img->hotspot_y / cursor_buf_scale);
+	wl_surface_set_buffer_scale(cursor_surf, cursor_buf_scale);
+	wl_surface_attach(cursor_surf, wl_cursor_image_get_buffer(cursor_img), 0, 0);
+	wl_surface_damage_buffer(cursor_surf, 0, 0, cursor_img->width, cursor_img->height);
+	wl_surface_commit(cursor_surf);
 }
 
 /* Sharp on a scaled output: wl_compositor 6 says which scale the output it is on
@@ -1325,6 +1341,9 @@ static void surf_preferred_scale(void *data, struct wl_surface *s, int32_t facto
 		return;
 	buf_scale = factor;
 	dirty = 1;
+	/* Not only at the next enter: the pointer may stay on the window. */
+	cursor_load();
+	cursor_set();
 }
 
 static void surf_preferred_transform(void *data, struct wl_surface *s,
