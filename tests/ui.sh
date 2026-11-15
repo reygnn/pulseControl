@@ -128,7 +128,7 @@ sc_start() {
 	BARH=$(((H - 16) / 2))
 	# In the window: the scale's inner x range and a row through it, below the
 	# middle so that the slider's groove doesn't matter.
-	S0=$((6 + BARH + 4 + 2))
+	S0=$((6 + BARH + 4 + 1))
 	S1=$(scale_end)
 	ROW=$((6 + BARH / 2 + 2))
 	# Inside the volume field, right of its text and above it.
@@ -241,6 +241,8 @@ check "a click on the status line gives the keyboard back" \
 pixel_is "and the frame is active again" $((WX + 2)) $((CY + ROW)) "$SEL"
 wait_pixel "the scale is filled up to the slider" $(($(thumb_mid 50) - 20)) "$ROW" "$SEL"
 wait_pixel "and empty behind it" $(($(thumb_mid 50) + 20)) "$ROW" "$TROUGH"
+# The widgets have mwc's bevel of 1, the frame its 2: the fill starts right inside.
+wait_pixel "the scale's bevel is 1" "$S0" "$ROW" "$SEL"
 
 # ---- keyboard ----------------------------------------------------------------
 

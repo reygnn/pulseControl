@@ -55,9 +55,10 @@
 
 #include "xdg-shell-client-protocol.h"
 
-#define BEV 2           /* bevel width, as in mwm */
+#define BEV 1           /* widgets' bevel, as mwc's buttons, wells and scrollbars */
+#define FRAME_BEV 2     /* the frame's, as mwc's */
 #define PAD 6
-#define FRAME (BEV + 1) /* mwm's border without resize handles, as mwc draws it */
+#define FRAME (FRAME_BEV + 1) /* mwm's border without resize handles, as mwc draws it */
 #define FIELD_PAD 8     /* around the text in the volume field */
 #define THUMB 30        /* width of the scale's slider */
 #define STEP 5          /* percent per key press or wheel step */
@@ -600,9 +601,9 @@ static void fill(uint32_t px, int x, int y, int w, int h)
 	cairo_fill(cr);
 }
 
-static void bevel_in(struct rect r, uint32_t t, uint32_t b)
+static void bevel_in(struct rect r, int w, uint32_t t, uint32_t b)
 {
-	for (int i = 0; i < BEV; i++) {
+	for (int i = 0; i < w; i++) {
 		fill(t, r.x + i, r.y + i, r.w - 2 * i, 1);
 		fill(t, r.x + i, r.y + i, 1, r.h - 2 * i);
 		fill(b, r.x + i + 1, r.y + r.h - 1 - i, r.w - 2 * i - 1, 1);
@@ -612,7 +613,7 @@ static void bevel_in(struct rect r, uint32_t t, uint32_t b)
 
 static void bevel(struct rect r, int raised)
 {
-	bevel_in(r, raised ? px_top : px_bot, raised ? px_bot : px_top);
+	bevel_in(r, BEV, raised ? px_top : px_bot, raised ? px_bot : px_top);
 }
 
 /* mwm's thin border: a raised bevel and one line of the face inside it. */
@@ -623,7 +624,7 @@ static void draw_frame(void)
 	fill(face, 0, H - FRAME, W, FRAME);
 	fill(face, 0, 0, FRAME, H);
 	fill(face, W - FRAME, 0, FRAME, H);
-	bevel_in((struct rect){ 0, 0, W, H }, mix(face, 0xffffff, 0.55f),
+	bevel_in((struct rect){ 0, 0, W, H }, FRAME_BEV, mix(face, 0xffffff, 0.55f),
 		mix(face, 0x000000, 0.5f));
 }
 
