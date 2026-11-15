@@ -5,16 +5,13 @@
 # the volume of the real sound card.
 #
 # Needs a built mwc with build/vinput, build/pngtool and build/xdgc in MWC_DIR (by default
-# ../mwc or ../mwm), grim, pactl and pulseaudio (PA_MODULES names its module directory,
+# ../mwc), grim, pactl and pulseaudio (PA_MODULES names its module directory,
 # if it isn't in the usual place). Output goes to build/ui.log, pulseControl's own to build/ui-pulseControl.log.
 SC_DIR=$(cd "$(dirname "$0")/.." && pwd)
 SC=${SC:-$SC_DIR/pulseControl}
 LOG=$SC_DIR/build/ui.log
 SC_LOG=$SC_DIR/build/ui-pulseControl.log
-if [ -z "${MWC_DIR:-}" ]; then
-	MWC_DIR=$SC_DIR/../mwc
-	[ -d "$MWC_DIR" ] || MWC_DIR=$SC_DIR/../mwm
-fi
+MWC_DIR=${MWC_DIR:-$SC_DIR/../mwc}
 [ -x "$SC" ] || { echo "FAIL: $SC not built"; exit 1; }
 [ -d "$MWC_DIR" ] || { echo "FAIL: no mwc in $MWC_DIR (set MWC_DIR)"; exit 1; }
 cd "$MWC_DIR" || exit 1

@@ -37,17 +37,11 @@ In mwc, a place of its own or the dock, in `~/.config/mwc/mwmrc`:
 
 A mute button with a speaker, the scale, the volume in percent, and a status line with
 the name of the output. The scale fills in the active colour up to the slider; muted,
-it stays empty.
+it stays empty. Only mwm's thin border, in the active colour while pulseControl has the
+keyboard. The colours are mwc's, see Configuration.
 
-It draws only mwm's thin border, no title bar, buttons or resize handles. The border
-takes the active colour while pulseControl has the keyboard. Alt and a drag move it, as
-any window in mwc. The colours are mwc's: `MWC_INACTIVE` and `MWC_ACTIVE` from the
-environment, else `Mwm*background` and `Mwm*activeBackground` from the mwmrc, else the
-Motif defaults.
-
-pulseControl follows the default output when it changes, and the volume when another
-program changes it. Without a sound server the status line says so, and pulseControl
-tries again every second; it starts none itself.
+It follows the default output and changes made by other programs. Without a sound
+server the status line says so, and pulseControl tries again every second.
 
 
 ## Keys
@@ -61,18 +55,8 @@ tries again every second; it starts none itself.
 | m, Space, a click on the speaker | mute on and off |
 | Esc, q, Ctrl+Q, Ctrl+W | quit |
 
-With Alt, Super or Ctrl held no key acts, except Ctrl+Q and Ctrl+W. The keyboard's
-volume keys work while the window has the keyboard.
-
-The field takes 0 to 100; a digit that would go past that does not arrive. Return
-takes the value, Backspace deletes a digit. Esc, a click beside the field or another
-window taking the keyboard cancel it, so Esc does not quit while the field is open.
-0 is silence; a typed value above 0 ends the muting.
-
-The scale ends at 100 %. A volume above that, set by another program, is shown and can
-be lowered, but pulseControl raises nothing past 100 %. The balance between the
-channels is kept, also through 0 % in a drag. Changing the volume leaves the muting
-alone.
+In the field Return takes the typed volume and Esc cancels it. With Alt, Super or Ctrl
+held no key acts, except Ctrl+Q and Ctrl+W. The balance between the channels is kept.
 
 
 ## Configuration
@@ -82,6 +66,9 @@ alone.
 | `SC_FONT` | `Sans 10` | Pango font name, e.g. `Sans Bold 11` |
 | `MWC_INACTIVE`, `MWC_ACTIVE` | `#aeb2c3`, `#7387ad` | background; fill, focused border |
 | `PULSE_SERVER` | | another sound server, as for every Pulse program |
+
+Without the colour variables it reads `Mwm*background` and `Mwm*activeBackground` from
+`~/.config/mwc/mwmrc`, else the Motif defaults.
 
 
 ## How this is built
@@ -100,7 +87,7 @@ runs pulseControl in a headless mwc with simulated mouse and keyboard, against a
 private PulseAudio server with two null sinks, and checks the keys, the mouse, typing,
 what other programs change, a lost and returning server, the border and focus, and the
 colours. The real sound card is left alone. It needs a built mwc with `build/vinput`,
-`build/pngtool` and `build/xdgc` in `MWC_DIR` (by default `../mwc` or `../mwm`), grim,
+`build/pngtool` and `build/xdgc` in `MWC_DIR` (by default `../mwc`), grim,
 pactl and pulseaudio; `PA_MODULES` names the module directory if it is elsewhere.
 
 On a host with `pipewire-pulse`, apt would remove `pipewire-alsa` for `pulseaudio`, so
