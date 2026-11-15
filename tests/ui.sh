@@ -351,6 +351,28 @@ do_input key 0
 do_input key Return
 expect_vol "back at 50" first 50 50
 
+# The text on the active colour, a mid-tone: black reads better on it than white.
+# Counted in the right end of the selection, inside the field's paper, which is near
+# white itself.
+do_input move $((CX + FIELD_X)) $((CY + ROW))
+do_input click left
+wait_pixel "a click selects the volume" $((W - 13)) "$FIELD_Y" "$SEL"
+ink_ok=
+for ((i = 0; i < 30; i++)); do
+	if WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null; then
+		set -- $((CX + W - 23)) $((CY + 10)) 10 $((BARH - 8))
+		black=$(build/pngtool count "$SHOT" "$@" 000000)
+		white=$(build/pngtool count "$SHOT" "$@" ffffff)
+		[ "$black" -gt 0 ] && [ "$white" = 0 ] && { ink_ok=1; break; }
+	fi
+	sleep 0.1
+done
+[ -n "$ink_ok" ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
+	fail "the selected volume has $black pixels near black and $white near white"; }
+echo "ok: the selected volume is black"
+do_input key Escape
+wait_pixel "Esc closes the field" "$FIELD_X" "$FIELD_Y" c6c9d5
+
 # ---- mouse -------------------------------------------------------------------
 
 do_input move $((CX + S0 + 5)) $((CY + ROW))
@@ -538,6 +560,27 @@ MWC_INACTIVE='#202020' PULSE_SERVER=unix:$SMOKE_DIR/none sc_start
 wait_pixel "MWC_INACTIVE is the background" 1 1 202020
 status_has "the error has a light colour there" ffa0a0
 sc_quit
+
+# ---- a scaled output ---------------------------------------------------------
+
+# At scale 2 it draws twice the pixels: the first one of the frame's face beside the
+# bevel is the active colour, not a blend of the two from a buffer scaled up.
+echo 'Mwm*HEADLESS-1*outputScale: 2' >"$XDG_CONFIG_HOME/mwc/mwmrc"
+reload_mwc
+check "the output is scaled" "[ \"\$(global output_HEADLESS-1 scale)\" = 200 ]"
+sc_start
+sharp=
+for ((i = 0; i < 30; i++)); do
+	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null &&
+		sharp=$(build/pngtool pixel "$SHOT" $((2 * (WX + 2))) $((2 * (CY + ROW))))
+	[ "$sharp" = "$SEL" ] && break
+	sleep 0.1
+done
+[ "$sharp" = "$SEL" ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
+	fail "at scale 2 the frame beside the bevel is $sharp, not $SEL (screenshot in $ERR_SHOT)"; }
+echo "ok: sharp at scale 2"
+sc_quit
+rm "$XDG_CONFIG_HOME/mwc/mwmrc"
 
 trap cleanup EXIT
 pa_stop
