@@ -580,8 +580,9 @@ sc_quit
 
 # A cursor theme need not have the size asked for, and the cursor surface's scale must
 # divide the image. Adwaita here has 24, 30, 36, 48, 72 and 96: 8 at scale 4 asks for
-# 32 and gets 30, which 4 doesn't divide. vinput counts in the 1280x720 it was started
-# with, four times the scaled layout.
+# 32 and gets 30, which 4 doesn't divide. The size is checked too: an enter before the
+# scale of 4 arrives would pass with a smaller scale's cursor. vinput counts in the
+# 1280x720 it was started with, four times the scaled layout.
 cursor_ok() { # the cursor is shown, and its scale divides its size
 	local w h f
 	w=$(global cursor cw) h=$(global cursor ch) f=$(global cursor cscale)
@@ -593,14 +594,13 @@ check "the output is scaled by 4" "[ \"\$(global output_HEADLESS-1 scale)\" = 40
 XCURSOR_SIZE=8 sc_start
 do_input move $((4 * (CX + W / 2))) $((4 * (CY + H / 2)))
 check "a cursor of 30 at scale 4 is set at a scale that divides it" \
-	"cursor_ok && [ \"\$(global cursor cscale)\" -gt 1 ]"
-cw4=$(global cursor cw)
+	"cursor_ok && [ \"\$(global cursor cw)\" = 30 ] && [ \"\$(global cursor cscale)\" -gt 1 ]"
 echo "cursor $(global cursor cw)x$(global cursor ch)@$(global cursor cscale)"
 # Back to 2 with the pointer kept on the window: the cursor follows without an enter.
 echo 'Mwm*HEADLESS-1*outputScale: 2' >"$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 check "a new scale loads the cursor again at once" \
-	"cursor_ok && [ \"\$(global cursor cw)\" != $cw4 ] && [ \"\$(global cursor cscale)\" = 2 ]"
+	"cursor_ok && [ \"\$(global cursor cw)\" = 24 ] && [ \"\$(global cursor cscale)\" = 2 ]"
 echo "cursor $(global cursor cw)x$(global cursor ch)@$(global cursor cscale)"
 sc_quit
 rm "$XDG_CONFIG_HOME/mwc/mwmrc"
