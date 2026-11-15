@@ -41,8 +41,10 @@ rm -f "$ERR_SHOT"
 want="pulseControl $(sed -n 's/.*_VERSION "\(.*\)"/\1/p' "$SC_DIR/version.h")"
 [ "$("$SC" -v)" = "$want" ] || fail "-v prints '$("$SC" -v)', not '$want'"
 echo "ok: -v prints the version"
-for arg in -h --help -x; do
-	"$SC" "$arg" 2>/dev/null && fail "$arg is taken"
+"$SC" -h 2>/dev/null || fail "-h is a usage error"
+echo "ok: -h prints the usage"
+for args in --help -x "-v -v" "-h -x"; do
+	"$SC" $args >/dev/null 2>&1 && fail "'$args' is taken"
 done
 echo "ok: anything else is a usage error"
 
@@ -673,8 +675,8 @@ MWC_ACTIVE=rgb:0/ff/0 sc_start
 wait_pixel "MWC_ACTIVE=rgb:0/ff/0 is one" $((S0 + 2)) "$ROW" 00ff00
 sc_quit
 
-# A line too long to read at once is no setting, and neither is its rest, which
-# here would be one. The setting before it stays.
+# A long line is read whole: a comment's end is no setting, however long it is, and a
+# setting is one, however many blanks it has.
 {
 	echo 'Mwm*activeBackground: #ff0000'
 	printf '!%0510d' 0 | tr 0 x     # fgets reads 511 at once
@@ -682,6 +684,19 @@ sc_quit
 } >"$XDG_CONFIG_HOME/mwc/mwmrc"
 sc_start
 wait_pixel "the rest of a long line in mwmrc is no setting" $((S0 + 2)) "$ROW" ff0000
+sc_quit
+printf 'Mwm*activeBackground:%600s#00ff00\n' '' >"$XDG_CONFIG_HOME/mwc/mwmrc"
+sc_start
+wait_pixel "a long setting in mwmrc counts" $((S0 + 2)) "$ROW" 00ff00
+sc_quit
+# The last line wins, as in mwc, even when its value is no colour: one too long to keep
+# gives the default, not the line before.
+{
+	echo 'Mwm*activeBackground: #ff0000'
+	printf 'Mwm*activeBackground: #%0300d\n' 0
+} >"$XDG_CONFIG_HOME/mwc/mwmrc"
+sc_start
+wait_pixel "a last value too long to keep gives the default" $((S0 + 2)) "$ROW" "$SEL"
 sc_quit
 rm "$XDG_CONFIG_HOME/mwc/mwmrc"
 
@@ -736,28 +751,39 @@ sc_quit
 
 # A cursor theme need not have the size asked for, and the cursor surface's scale must
 # divide the image. Adwaita here has 24, 30, 36, 48, 72 and 96: 8 at scale 4 asks for
-# 32 and gets 30, which 4 doesn't divide. The size is checked too: an enter before the
-# scale of 4 arrives would pass with a smaller scale's cursor. vinput counts in the
-# 1280x720 it was started with, four times the scaled layout.
+# 32 and gets 30, which 4 doesn't divide. Then a viewport shows the buffer at 30 / 4,
+# about 8, as large as mwc shows its own cursor. The size is checked too: an enter
+# before the scale of 4 arrives would pass with a smaller scale's cursor. vinput counts
+# in the 1280x720 it was started with, four times the scaled layout.
 cursor_ok() { # the cursor is shown, and its scale divides its size
 	local w h f
 	w=$(global cursor cw) h=$(global cursor ch) f=$(global cursor cscale)
 	[ "${w:-0}" -gt 0 ] && [ "${f:-0}" -gt 0 ] && [ $((w % f)) = 0 ] && [ $((h % f)) = 0 ]
 }
+# The last size the cursor's viewport was given, "w h"; -1 -1 is none. From the
+# protocol log of the instance started with WAYLAND_DEBUG.
+cursor_dest() {
+	grep -o 'wp_viewport#[0-9]*\.set_destination(-\?[0-9]*, -\?[0-9]*)' "$SC_LOG" |
+		tail -1 | sed 's/.*(\(.*\), \(.*\))/\1 \2/'
+}
 echo 'Mwm*HEADLESS-1*outputScale: 4' >"$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 check "the output is scaled by 4" "[ \"\$(global output_HEADLESS-1 scale)\" = 400 ]"
-XCURSOR_SIZE=8 sc_start
+: >"$SC_LOG"
+XCURSOR_SIZE=8 WAYLAND_DEBUG=client sc_start
 do_input move $((4 * (CX + W / 2))) $((4 * (CY + H / 2)))
-check "a cursor of 30 at scale 4 is set at a scale that divides it" \
-	"cursor_ok && [ \"\$(global cursor cw)\" = 30 ] && [ \"\$(global cursor cscale)\" -gt 1 ]"
-echo "cursor $(global cursor cw)x$(global cursor ch)@$(global cursor cscale)"
+check "a cursor of 30 at scale 4 is set at scale 1" \
+	"cursor_ok && [ \"\$(global cursor cw)\" = 30 ] && [ \"\$(global cursor cscale)\" = 1 ]"
+check "and the viewport shows it at 8" "[ \"\$(cursor_dest)\" = '8 8' ]"
+echo "cursor $(global cursor cw)x$(global cursor ch)@$(global cursor cscale) at $(cursor_dest)"
 # Back to 2 with the pointer kept on the window: the cursor follows without an enter.
 echo 'Mwm*HEADLESS-1*outputScale: 2' >"$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 check "a new scale loads the cursor again at once" \
 	"cursor_ok && [ \"\$(global cursor cw)\" = 24 ] && [ \"\$(global cursor cscale)\" = 2 ]"
-echo "cursor $(global cursor cw)x$(global cursor ch)@$(global cursor cscale)"
+check "there the scale divides it, and the viewport is unset" \
+	"[ \"\$(cursor_dest)\" = '-1 -1' ]"
+echo "cursor $(global cursor cw)x$(global cursor ch)@$(global cursor cscale) at $(cursor_dest)"
 sc_quit
 # A size past any theme is the largest there is, not an overflow. Still at scale 2.
 XCURSOR_SIZE=1000000000 sc_start

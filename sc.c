@@ -53,6 +53,7 @@
 #include "version.h"
 #include <xkbcommon/xkbcommon-keysyms.h>
 
+#include "viewporter-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
 #define BEV 1           /* widgets' bevel, as mwc's buttons, wells and scrollbars */
@@ -116,6 +117,7 @@ static struct wl_display *dpy;
 static struct wl_compositor *compositor;
 static struct wl_shm *shm;
 static struct wl_seat *seat;
+static uint32_t seat_global;    /* its name in the registry */
 static struct xdg_wm_base *wm_base;
 static struct wl_surface *surface;
 static struct wl_callback *frame;       /* a frame is on its way */
@@ -139,6 +141,9 @@ static struct wl_cursor_theme *cursor_theme;
 static struct wl_cursor_image *cursor_img;
 static int cursor_scale;         /* the window's scale it was loaded at */
 static int cursor_buf_scale;     /* its surface's scale, which divides the image */
+static struct wp_viewporter *viewporter;
+static struct wp_viewport *cursor_vp;
+static int cursor_vw, cursor_vh; /* its size on the window, if the viewport sets it */
 static uint32_t ptr_serial;      /* of the last enter, to set the cursor again */
 static void cursor_load(void);
 static void cursor_set(void);
@@ -331,30 +336,24 @@ static int parse_color(const char *s, uint32_t *out)
 /* Last global "Mwm*key: value" line of ~/.config/mwc/mwmrc. */
 static char *mwmrc_get(const char *key, char *val, size_t n)
 {
-	char path[PATH_MAX], line[512];
+	char path[PATH_MAX];
 	const char *home = getenv("HOME"), *xdg = getenv("XDG_CONFIG_HOME");
 	int len;
+	/* As mwc: without either there is no mwmrc, not one in /.config. */
 	if (xdg && *xdg)
 		len = snprintf(path, sizeof path, "%s/mwc/mwmrc", xdg);
+	else if (home && *home)
+		len = snprintf(path, sizeof path, "%s/.config/mwc/mwmrc", home);
 	else
-		len = snprintf(path, sizeof path, "%s/.config/mwc/mwmrc",
-			home ? home : "");
+		return NULL;
 	if (len < 0 || (size_t)len >= sizeof path)
 		return NULL;
 	FILE *f = fopen(path, "r");
 	if (!f)
 		return NULL;
-	char *found = NULL;
-	size_t kl = strlen(key);
-	while (fgets(line, sizeof line, f)) {
-		size_t ll = strlen(line);
-		/* Too long for the buffer: no setting, and its rest is none either. */
-		if (ll && line[ll - 1] != '\n' && !feof(f)) {
-			int c;
-			while ((c = getc(f)) != EOF && c != '\n')
-				;
-			continue;
-		}
+	char *found = NULL, *line = NULL;      /* whole lines, however long */
+	size_t kl = strlen(key), cap = 0;
+	while (getline(&line, &cap, f) > 0) {
 		char *p = line;
 		while (isspace((unsigned char)*p))
 			p++;
@@ -374,12 +373,16 @@ static char *mwmrc_get(const char *key, char *val, size_t n)
 		char *e = p + strlen(p);
 		while (e > p && isspace((unsigned char)e[-1]))
 			*--e = 0;
-		/* One too long to keep leaves the line before it. */
+		/* The last line wins, as in mwc, even a bad one: too long to keep is
+		 * no value, not a cut one nor the one before. */
 		if ((size_t)(e - p) < n) {
 			memcpy(val, p, e - p + 1);
 			found = val;
+		} else {
+			found = NULL;
 		}
 	}
+	free(line);
 	fclose(f);
 	return found;
 }
@@ -462,12 +465,16 @@ static void sink_info(pa_context *c, const pa_sink_info *i, int eol, void *u)
 	sink_mute = i->mute;
 	sink_pct = ((uint64_t)vol * 100 + PA_VOLUME_NORM / 2) / PA_VOLUME_NORM;
 	sink_state = SINK_OK;
-	/* Cut first: cutting afterwards could split a character, and Pango takes
-	 * valid UTF-8 only. */
-	char cut[sizeof sink_desc];
-	snprintf(cut, sizeof cut, "%s", i->description ? i->description : i->name);
-	char *d = pa_utf8_filter(cut);
-	snprintf(sink_desc, sizeof sink_desc, "%s", d ? d : "");
+	/* Pango takes valid UTF-8 only: filtered, then cut between characters. */
+	char *d = pa_utf8_filter(i->description ? i->description : i->name);
+	size_t n = d ? strlen(d) : 0;
+	if (n >= sizeof sink_desc) {
+		n = sizeof sink_desc - 1;
+		while (n > 0 && ((unsigned char)d[n] & 0xc0) == 0x80)
+			n--;
+	}
+	memcpy(sink_desc, d ? d : "", n);
+	sink_desc[n] = 0;
 	pa_xfree(d);
 }
 
@@ -1177,11 +1184,17 @@ static void ptr_button(void *data, struct wl_pointer *p, uint32_t serial,
 	}
 }
 
+static void ptr_frame(void *data, struct wl_pointer *p);
+
 static void ptr_axis(void *data, struct wl_pointer *p, uint32_t time,
 	uint32_t axis, wl_fixed_t value)
 {
-	if (axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
-		axis_acc += wl_fixed_to_double(value);
+	if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
+		return;
+	axis_acc += wl_fixed_to_double(value);
+	/* Before wl_seat 5 no frame ends the event: each one counts by itself. */
+	if (wl_pointer_get_version(p) < WL_POINTER_FRAME_SINCE_VERSION)
+		ptr_frame(data, p);
 }
 
 static void ptr_axis_source(void *data, struct wl_pointer *p, uint32_t source)
@@ -1246,7 +1259,11 @@ static void seat_capabilities(void *data, struct wl_seat *s, uint32_t caps)
 		end_drag();
 		btn_pressed = 0;
 		dirty = 1;
-		wl_pointer_release(pointer);
+		/* release is from wl_seat 3 on; an older seat only knows destroy. */
+		if (wl_pointer_get_version(pointer) >= WL_POINTER_RELEASE_SINCE_VERSION)
+			wl_pointer_release(pointer);
+		else
+			wl_pointer_destroy(pointer);
 		pointer = NULL;
 		ptr_surface = NULL;
 	}
@@ -1254,9 +1271,13 @@ static void seat_capabilities(void *data, struct wl_seat *s, uint32_t caps)
 		keyboard = wl_seat_get_keyboard(s);
 		wl_keyboard_add_listener(keyboard, &keyboard_listener, NULL);
 	} else if (!want_kb && keyboard) {
-		wl_keyboard_release(keyboard);
+		if (wl_keyboard_get_version(keyboard) >= WL_KEYBOARD_RELEASE_SINCE_VERSION)
+			wl_keyboard_release(keyboard);
+		else
+			wl_keyboard_destroy(keyboard);
 		keyboard = NULL;
 		repeat_kc = 0;
+		edit_cancel();  /* gone without a leave, perhaps */
 	}
 }
 
@@ -1281,16 +1302,18 @@ static const struct xdg_wm_base_listener wm_base_listener = { wm_ping };
 static void registry_global(void *data, struct wl_registry *r, uint32_t name,
 	const char *iface, uint32_t ver)
 {
-	/* damage_buffer needs wl_compositor 4; wl_seat 5 brings the pointer's frame,
-	 * which the wheel waits for, and release. */
+	/* wl_surface.damage_buffer is from version 4: an older one is not taken. */
 	if (!strcmp(iface, wl_compositor_interface.name) && ver >= 4) {
 		compositor = wl_registry_bind(r, name, &wl_compositor_interface,
 			MIN(ver, 6));
 	} else if (!strcmp(iface, wl_shm_interface.name)) {
 		shm = wl_registry_bind(r, name, &wl_shm_interface, 1);
-	} else if (!strcmp(iface, wl_seat_interface.name) && !seat && ver >= 5) {
+	} else if (!strcmp(iface, wl_seat_interface.name) && !seat) {
 		seat = wl_registry_bind(r, name, &wl_seat_interface, MIN(ver, 7));
+		seat_global = name;
 		wl_seat_add_listener(seat, &seat_listener, NULL);
+	} else if (!strcmp(iface, wp_viewporter_interface.name) && !viewporter) {
+		viewporter = wl_registry_bind(r, name, &wp_viewporter_interface, 1);
 	} else if (!strcmp(iface, xdg_wm_base_interface.name)) {
 		wm_base = wl_registry_bind(r, name, &xdg_wm_base_interface,
 			MIN(ver, 2));
@@ -1298,8 +1321,17 @@ static void registry_global(void *data, struct wl_registry *r, uint32_t name,
 	}
 }
 
+/* A seat that goes is let go of, so that the next one announced is taken. */
 static void registry_remove(void *data, struct wl_registry *r, uint32_t name)
 {
+	if (!seat || name != seat_global)
+		return;
+	seat_capabilities(NULL, seat, 0);
+	if (wl_seat_get_version(seat) >= WL_SEAT_RELEASE_SINCE_VERSION)
+		wl_seat_release(seat);
+	else
+		wl_seat_destroy(seat);
+	seat = NULL;
 }
 
 static const struct wl_registry_listener registry_listener = {
@@ -1371,7 +1403,7 @@ static void cursor_load(void)
 		wl_cursor_theme_destroy(cursor_theme);
 	cursor_theme = NULL;
 	cursor_img = NULL;
-	cursor_scale = buf_scale;
+	cursor_scale = 0;
 	const char *s = getenv("XCURSOR_SIZE");
 	long size = s ? strtol(s, NULL, 10) : 0;
 	if (size <= 0)
@@ -1381,22 +1413,37 @@ static void cursor_load(void)
 	cursor_theme = wl_cursor_theme_load(getenv("XCURSOR_THEME"),
 		(int)size * buf_scale, shm);
 	if (!cursor_theme)
-		return;
+		return;         /* tried again on the next enter */
 	struct wl_cursor *c = wl_cursor_theme_get_cursor(cursor_theme, "default");
 	if (!c)
 		c = wl_cursor_theme_get_cursor(cursor_theme, "left_ptr");
-	if (c)
-		cursor_img = c->images[0];
+	if (!c)
+		return;
+	cursor_img = c->images[0];
+	cursor_scale = buf_scale;
 	if (!cursor_surf)
 		cursor_surf = wl_compositor_create_surface(compositor);
-	/* A theme need not have the size asked for: 24 at scale 3 gives Adwaita's 64.
-	 * The buffer scale must divide the image, or a compositor may end the client. */
+	if (viewporter && !cursor_vp)
+		cursor_vp = wp_viewporter_get_viewport(viewporter, cursor_surf);
+	/* A theme has only some sizes: Adwaita gives 30 for 32. A buffer scale that
+	 * doesn't divide the image is a protocol error. With a viewport the buffer is
+	 * shown at its size over the scale, as mwc shows its own cursor; without, at
+	 * the largest scale up to the window's that divides it, and that much larger. */
+	int w = cursor_img->width, h = cursor_img->height, sc = buf_scale;
 	cursor_buf_scale = 1;
-	for (int f = buf_scale; cursor_img && f > 1; f--)
-		if (cursor_img->width % f == 0 && cursor_img->height % f == 0) {
-			cursor_buf_scale = f;
-			break;
-		}
+	cursor_vw = cursor_vh = -1;
+	if (w % sc == 0 && h % sc == 0) {
+		cursor_buf_scale = sc;
+	} else if (cursor_vp) {
+		cursor_vw = MAX((w + sc / 2) / sc, 1);
+		cursor_vh = MAX((h + sc / 2) / sc, 1);
+	} else {
+		for (int d = sc - 1; d > 1; d--)
+			if (w % d == 0 && h % d == 0) {
+				cursor_buf_scale = d;
+				break;
+			}
+	}
 }
 
 /* The cursor on the window, while the pointer is over it. */
@@ -1404,8 +1451,18 @@ static void cursor_set(void)
 {
 	if (!cursor_img || !pointer || !ptr_surface)
 		return;
-	wl_pointer_set_cursor(pointer, ptr_serial, cursor_surf,
-		cursor_img->hotspot_x / cursor_buf_scale, cursor_img->hotspot_y / cursor_buf_scale);
+	int hx = cursor_img->hotspot_x / cursor_buf_scale;
+	int hy = cursor_img->hotspot_y / cursor_buf_scale;
+	if (cursor_vw > 0) {
+		/* Rounded as the viewport's size is. */
+		hx = (cursor_img->hotspot_x * cursor_vw + cursor_img->width / 2) /
+			cursor_img->width;
+		hy = (cursor_img->hotspot_y * cursor_vh + cursor_img->height / 2) /
+			cursor_img->height;
+	}
+	wl_pointer_set_cursor(pointer, ptr_serial, cursor_surf, hx, hy);
+	if (cursor_vp)
+		wp_viewport_set_destination(cursor_vp, cursor_vw, cursor_vh);
 	wl_surface_set_buffer_scale(cursor_surf, cursor_buf_scale);
 	wl_surface_attach(cursor_surf, wl_cursor_image_get_buffer(cursor_img), 0, 0);
 	wl_surface_damage_buffer(cursor_surf, 0, 0, cursor_img->width, cursor_img->height);
@@ -1500,10 +1557,11 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	if (argc > 1) {
+		int help = argc == 2 && !strcmp(argv[1], "-h");
 		fprintf(stderr, "usage: pulseControl [-v]\n"
 			"Environment: SC_FONT (default \"Sans 10\"), "
 			"MWC_INACTIVE, MWC_ACTIVE.\n");
-		return 1;
+		return help ? 0 : 1;
 	}
 	setlocale(LC_ALL, "");
 	signal(SIGPIPE, SIG_IGN);       /* as libpulse asks of its programs */

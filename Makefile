@@ -17,9 +17,10 @@ $(error pkg-config finds no wayland-scanner)
 endif
 endif
 XDG_SHELL = $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml
+VIEWPORTER = $(WAYLAND_PROTOCOLS)/stable/viewporter/viewporter.xml
 
-PROTO_H = build/xdg-shell-client-protocol.h
-PROTO_C = build/xdg-shell-protocol.c
+PROTO_H = build/xdg-shell-client-protocol.h build/viewporter-client-protocol.h
+PROTO_C = build/xdg-shell-protocol.c build/viewporter-protocol.c
 
 # CPPFLAGS, CFLAGS, LDFLAGS and LDLIBS stay the user's, also on the command line:
 # `make CFLAGS=-O0` must not lose the include paths.
@@ -42,6 +43,12 @@ build/xdg-shell-client-protocol.h: $(XDG_SHELL) | build
 
 build/xdg-shell-protocol.c: $(XDG_SHELL) | build
 	$(WAYLAND_SCANNER) private-code $(XDG_SHELL) $@
+
+build/viewporter-client-protocol.h: $(VIEWPORTER) | build
+	$(WAYLAND_SCANNER) client-header $(VIEWPORTER) $@
+
+build/viewporter-protocol.c: $(VIEWPORTER) | build
+	$(WAYLAND_SCANNER) private-code $(VIEWPORTER) $@
 
 install: pulseControl
 	install -Dm755 pulseControl $(DESTDIR)$(PREFIX)/bin/pulseControl
