@@ -6,7 +6,8 @@
  * controls the default output and follows it when it changes, or when something
  * else changes its volume. It reads the same colours as mwc: MWC_INACTIVE /
  * MWC_ACTIVE from the environment, else Mwm*background and Mwm*activeBackground
- * from ~/.config/mwc/mwmrc, else the Motif defaults.
+ * from ~/.config/mwc/mwmrc, else the Motif defaults. The text takes
+ * Mwm*foreground and Mwm*activeForeground, else black or white.
  *
  * Keys:   Up / Right / +  louder        Down / Left / -  quieter
  *         m / Space       mute          Esc / q / Ctrl+Q / Ctrl+W  quit
@@ -149,7 +150,7 @@ static int repeat_rate = 25, repeat_delay = 600;
 static int W = 320, H, float_w = 320, min_h;
 static int focused;             /* it has the keyboard: the active frame */
 static uint32_t px_bg, px_top, px_bot, px_trough, px_sel, px_list, px_paper;
-static uint32_t xc_fg, xc_dim, xc_err;
+static uint32_t xc_fg, xc_dim, xc_err, xc_sel_fg;
 static cairo_t *cr;             /* what fill, bevel and text draw on */
 static PangoLayout *plo;
 static int font_asc, font_desc;
@@ -286,14 +287,14 @@ static int parse_color(const char *s, uint32_t *out)
 		uint32_t rgb = 0;
 		s += 4;
 		for (int i = 0; i < 3; i++) {
-			char *end;
-			unsigned long v = strtoul(s, &end, 16);
-			int digits = end - s;
-			if (digits < 1 || digits > 4 || *end != (i < 2 ? '/' : '\0'))
+			/* Only hex digits: strtoul alone also takes blanks, signs and 0x. */
+			int digits = strspn(s, "0123456789abcdefABCDEF");
+			if (digits < 1 || digits > 4 || s[digits] != (i < 2 ? '/' : '\0'))
 				return 0;
+			unsigned long v = strtoul(s, NULL, 16);
 			unsigned long max = (1ul << (4 * digits)) - 1;
 			rgb = rgb << 8 | (v * 255 + max / 2) / max;
-			s = end + 1;
+			s += digits + 1;
 		}
 		*out = rgb;
 		return 1;
@@ -349,13 +350,16 @@ static char *mwmrc_get(const char *key, char *val, size_t n)
 	return found;
 }
 
+static int mwmrc_color(const char *res, uint32_t *out)
+{
+	char v[256];
+	return parse_color(mwmrc_get(res, v, sizeof v), out);
+}
+
 static uint32_t setting(const char *env, const char *res, uint32_t def)
 {
 	uint32_t rgb;
-	char v[256];
-	if (parse_color(getenv(env), &rgb))
-		return rgb;
-	if (parse_color(mwmrc_get(res, v, sizeof v), &rgb))
+	if (parse_color(getenv(env), &rgb) || mwmrc_color(res, &rgb))
 		return rgb;
 	return def;
 }
@@ -363,7 +367,10 @@ static uint32_t setting(const char *env, const char *res, uint32_t def)
 static void theme_init(void)
 {
 	uint32_t bg = setting("MWC_INACTIVE", "background", 0xaeb2c3);
-	uint32_t fg = contrast(bg);
+	uint32_t fg;
+	/* Text as mwc's titles: the resource if set, else black or white. */
+	if (!mwmrc_color("foreground", &fg))
+		fg = contrast(bg);
 
 	px_bg = bg;
 	px_top = mix(bg, 0xffffff, 0.55f);
@@ -372,9 +379,12 @@ static void theme_init(void)
 	px_list = mix(bg, 0xffffff, 0.3f);
 	px_paper = 0xf6f6f6;
 	px_sel = setting("MWC_ACTIVE", "activeBackground", 0x7387ad);
+	if (!mwmrc_color("activeForeground", &xc_sel_fg))
+		xc_sel_fg = contrast(px_sel);
 	xc_fg = fg;
 	xc_dim = mix(bg, fg, 0.6f);
-	xc_err = fg == 0xffffff ? 0xffa0a0 : 0x8a0303; /* readable on dark themes */
+	/* readable on dark themes */
+	xc_err = contrast(bg) == 0xffffff ? 0xffa0a0 : 0x8a0303;
 
 	const char *f = getenv("SC_FONT");
 	PangoFontDescription *desc =
@@ -453,16 +463,21 @@ static void track(pa_operation *op)
 	pa_operation_unref(op);
 }
 
+/* The window shows a change only once it is on its way: a context that has just
+ * failed sends nothing, and ctx_drop resets the window a moment later. */
 static void set_percent(int pct)
 {
 	if (sink_state != SINK_OK || pct == sink_pct)
 		return;
-	sink_pct = pct;
-	dirty = 1;
 	pa_cvolume cv = sink_shape;
 	pa_cvolume_scale(&cv, ((uint64_t)pct * PA_VOLUME_NORM + 50) / 100);
-	track(pa_context_set_sink_volume_by_index(ctx, sink_idx, &cv, set_done,
-		NULL));
+	pa_operation *op = pa_context_set_sink_volume_by_index(ctx, sink_idx, &cv,
+		set_done, NULL);
+	if (!op)
+		return;
+	sink_pct = pct;
+	dirty = 1;
+	track(op);
 }
 
 static void step_volume(int d)
@@ -477,10 +492,13 @@ static void toggle_mute(void)
 {
 	if (sink_state != SINK_OK)
 		return;
+	pa_operation *op = pa_context_set_sink_mute_by_index(ctx, sink_idx, !sink_mute,
+		set_done, NULL);
+	if (!op)
+		return;
 	sink_mute = !sink_mute;
 	dirty = 1;
-	track(pa_context_set_sink_mute_by_index(ctx, sink_idx, sink_mute, set_done,
-		NULL));
+	track(op);
 }
 
 static void ctx_event(pa_context *c, pa_subscription_event_type_t t, uint32_t idx,
@@ -712,7 +730,7 @@ static void paint(void)
 		} else {
 			fill(0x000000, tpos + textw(edit_buf), fy + 2, 1, fh - 4);
 		}
-		text(edit_fresh ? contrast(px_sel) : 0x000000, tpos, r_pct.y, r_pct.h,
+		text(edit_fresh ? xc_sel_fg : 0x000000, tpos, r_pct.y, r_pct.h,
 			fw, s);
 	} else if (ok) {
 		snprintf(s, sizeof s, "%d %%", sink_pct);

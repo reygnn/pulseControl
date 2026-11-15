@@ -21,3 +21,7 @@ resize handles. The scale grows with the width.
 It draws at the integer scale the compositor asks for with wl_compositor 6. A
 fractional scale is drawn at the next integer and scaled down by the compositor; an
 older compositor never asks, and there the window stays at scale 1 and is blurred.
+
+The cursor is the theme's nearest size to `XCURSOR_SIZE` times the scale. Without
+that size in the theme it is set at the largest scale that divides the image, so it
+can come out larger than `XCURSOR_SIZE`, scaled by the compositor and less sharp.

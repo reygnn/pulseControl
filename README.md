@@ -68,7 +68,9 @@ held no key acts, except Ctrl+Q and Ctrl+W. The balance between the channels is 
 | `PULSE_SERVER` | | another sound server, as for every Pulse program |
 
 Without the colour variables it reads `Mwm*background` and `Mwm*activeBackground` from
-`~/.config/mwc/mwmrc`, else the Motif defaults.
+`~/.config/mwc/mwmrc`, else the Motif defaults. The text takes `Mwm*foreground` and
+`Mwm*activeForeground` from there as mwc's titles do, else black or white, whichever
+reads better.
 
 
 ## How this is built

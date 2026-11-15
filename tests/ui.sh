@@ -26,7 +26,9 @@ export LC_ALL=C.UTF-8
 export HOME=$SMOKE_DIR/home XDG_CONFIG_HOME=$SMOKE_DIR/home/.config
 export PULSE_SERVER=unix:$SMOKE_DIR/pulse.sock
 export DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent
-unset MWC_INACTIVE MWC_ACTIVE SC_FONT PULSE_RUNTIME_PATH PULSE_STATE_PATH
+unset MWC_INACTIVE MWC_ACTIVE SC_FONT PULSE_RUNTIME_PATH PULSE_STATE_PATH XCURSOR_PATH
+# The cursor checks count in Adwaita's sizes, whatever the developer uses.
+export XCURSOR_THEME=Adwaita
 mkdir -p "$HOME"
 : >"$SC_LOG"
 SHOT=$SMOKE_DIR/ui.png
@@ -166,16 +168,12 @@ sc_quit() {
 # status_has <description> <rrggbb>: text in that colour in the status line, for
 # which any pixel fully inside a stroke will do.
 status_has() {
-	local x y i shot=$SMOKE_DIR/s.png
-	for ((i = 0; i < 3; i++)); do
+	local i shot=$SMOKE_DIR/s.png
+	for ((i = 0; i < 30; i++)); do
 		WAYLAND_DISPLAY=wayland-0 grim "$shot" 2>/dev/null || fail "no screenshot"
-		for ((y = CY + H - 6 - BARH + 4; y < CY + H - 6 - 4; y++)); do
-			for ((x = CX + 12; x < CX + 110; x++)); do
-				[ "$(build/pngtool pixel "$shot" "$x" "$y")" = "$2" ] &&
-					{ echo "ok: $1"; return 0; }
-			done
-		done
-		sleep 0.5
+		[ "$(build/pngtool count "$shot" $((CX + 12)) $((CY + H - 6 - BARH + 4)) \
+			98 $((BARH - 8)) "$2" 0)" -gt 0 ] && { echo "ok: $1"; return 0; }
+		sleep 0.1
 	done
 	fail "$1: no $2 in the status line"
 }
@@ -184,6 +182,15 @@ sc_is_client() { pactl list short clients 2>/dev/null | grep -qw pulseControl; }
 
 # Where a percentage puts the middle of the slider, in the window.
 thumb_mid() { echo $((S0 + (S1 - S0 - 30) * $1 / 100 + 15)); }
+
+# shows <description> <percent>: the window has the volume, filled up to the slider
+# and empty behind it. Before input that depends on a volume another program set:
+# the server may have it before pulseControl does. 3 pixels beside the slider, so that
+# 96 and 100 differ.
+shows() {
+	wait_pixel "$1" $(($(thumb_mid "$2") - 18)) "$ROW" "$SEL"
+	wait_pixel "$1" $(($(thumb_mid "$2") + 18)) "$ROW" "$TROUGH"
+}
 
 # A compositor left stopped would hang the screenshot and the cleanup.
 trap 'kill -CONT "$pid" 2>/dev/null; WAYLAND_DISPLAY=wayland-0 grim "$ERR_SHOT" 2>/dev/null; cleanup' EXIT
@@ -412,6 +419,7 @@ expect_vol "the release leaves it there" first $held
 # A press on the slider without moving changes nothing, wherever on it.
 pactl set-sink-volume first 40%
 expect_vol "changed by another program" first 40 40
+shows "and shown" 40
 do_input move $((CX + $(thumb_mid 40) + 12)) $((CY + ROW))
 do_input click left
 sleep 0.2
@@ -443,7 +451,7 @@ pactl set-sink-mute first 0
 # The balance survives steps, and a volume of zero in a drag.
 pactl set-sink-volume first 80% 40%
 do_input move "$BX" $((CY + 6 + BARH / 2))
-sleep 0.2
+shows "an uneven volume shows its loudest channel" 80
 do_input key Up
 expect_near "a step keeps the balance" first 85 43
 do_input move $((CX + $(thumb_mid 85))) $((CY + ROW))
@@ -469,18 +477,18 @@ expect_vol "grabbing the slider keeps a volume above 100 %" first 130 130
 do_input up left
 do_input key Down
 expect_vol "Down lowers it" first 125 125
-pactl set-sink-volume first 98%
-sleep 0.2
+pactl set-sink-volume first 96%
+shows "96 % is shown" 96
 do_input key Up
 expect_vol "Up stops at 100 %" first 100 100
 pactl set-sink-volume first 3%
-sleep 0.2
+shows "3 % is shown" 3
 do_input key Down
 expect_vol "Down stops at 0" first 0 0
 
 # vinput waits for each key, so this needn't outrun the server's answers.
 pactl set-sink-volume first 5%
-sleep 0.2
+shows "5 % is shown" 5
 for _ in 1 2 3 4 5 6 7 8; do do_input key Up; done
 expect_vol "steps in a row add up" first 45 45
 
@@ -488,12 +496,12 @@ expect_vol "steps in a row add up" first 45 45
 
 pactl set-default-sink second
 wait_pixel "the scale shows the new default" $(($(thumb_mid 45) - 20)) "$ROW" "$TROUGH"
-sleep 0.2
+shows "at its volume" 10
 do_input key Up
 expect_vol "a step goes to the new default" second 15 15
 expect_vol "and not to the old one" first 45 45
 pactl set-default-sink first
-sleep 0.2
+shows "the old default is back" 45
 
 # ---- no output at all --------------------------------------------------------
 
@@ -506,7 +514,7 @@ pactl load-module module-null-sink sink_name=first \
 pactl set-default-sink first
 pactl set-sink-volume first 50%
 wait_pixel "with a sink back the scale fills" $((S0 + 2)) "$ROW" "$SEL"
-sleep 0.2
+shows "at the volume set" 50
 do_input key Up
 expect_vol "and it works" first 55 55
 
@@ -527,7 +535,7 @@ wait_for "pulseControl reconnects without any Wayland event" sc_is_client
 kill -CONT "$pid"
 pactl set-sink-volume first 30%
 wait_pixel "with a server back it comes back" $((S0 + 2)) "$ROW" "$SEL"
-sleep 0.3
+shows "at the volume set" 30
 do_input key Up
 expect_vol "and works" first 35 35
 
@@ -549,6 +557,39 @@ wait_pixel "the fill comes from mwmrc" $((S0 + 2)) "$ROW" ff0000
 sc_quit
 MWC_ACTIVE='#00ff00' sc_start
 wait_pixel "MWC_ACTIVE goes before mwmrc" $((S0 + 2)) "$ROW" 00ff00
+sc_quit
+rm "$XDG_CONFIG_HOME/mwc/mwmrc"
+
+# rgb: takes hex digits only, as mwc does: no sign, no blank, no 0x.
+for bad in rgb:-f/0/0 'rgb: f/0/0' rgb:0xf/0/0; do
+	MWC_ACTIVE=$bad sc_start
+	wait_pixel "MWC_ACTIVE=$bad is no colour" $((S0 + 2)) "$ROW" "$SEL"
+	sc_quit
+done
+MWC_ACTIVE=rgb:0/ff/0 sc_start
+wait_pixel "MWC_ACTIVE=rgb:0/ff/0 is one" $((S0 + 2)) "$ROW" 00ff00
+sc_quit
+
+# Text in the colours mwc gives its titles: foreground on the background,
+# activeForeground on the active colour, as in the selected volume.
+printf 'Mwm*foreground: #00ff00\nMwm*activeForeground: #ff00ff\n' \
+	>"$XDG_CONFIG_HOME/mwc/mwmrc"
+sc_start
+status_has "the text takes Mwm*foreground" 00ff00
+do_input move $((CX + FIELD_X)) $((CY + ROW))
+do_input click left
+wait_pixel "a click selects the volume" $((W - 13)) "$FIELD_Y" "$SEL"
+fg_ok=
+for ((i = 0; i < 30; i++)); do
+	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null &&
+		[ "$(build/pngtool count "$SHOT" $((CX + W - 23)) $((CY + 10)) 10 \
+			$((BARH - 8)) ff00ff)" -gt 0 ] && { fg_ok=1; break; }
+	sleep 0.1
+done
+[ -n "$fg_ok" ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
+	fail "the selected volume is not in Mwm*activeForeground"; }
+echo "ok: the selected volume takes Mwm*activeForeground"
+do_input key Escape
 sc_quit
 rm "$XDG_CONFIG_HOME/mwc/mwmrc"
 
