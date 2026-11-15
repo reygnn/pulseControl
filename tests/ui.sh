@@ -17,7 +17,7 @@ MWC_DIR=${MWC_DIR:-$SC_DIR/../mwc}
 cd "$MWC_DIR" || exit 1
 . tests/lib.sh
 require_tools grim pactl pulseaudio
-for tool in build/vinput build/pngtool build/xdgc; do
+for tool in build/vinput build/pngtool build/xdgc build/layerc; do
 	[ -x "$tool" ] || { echo "FAIL: $MWC_DIR/$tool not built (make $tool)"; exit 1; }
 done
 
@@ -223,7 +223,7 @@ sc_start
 [ "$(get pulseControl bw)" = 0 ] && [ "$(get pulseControl th)" = 0 ] ||
 	fail "mwc decorates it: border $(get pulseControl bw), title $(get pulseControl th)"
 echo "ok: no server-side decoration"
-# Its frame: a bevel of 2, then a line of the face, active while it has the keyboard.
+# Its frame: a bevel of 2, then a line of the face, active while it is the active window.
 pixel_is "the frame is in the active colour" $((WX + 2)) $((CY + ROW)) "$SEL"
 # Another window, in the far corner, takes the keyboard, and gives it back.
 WAYLAND_DISPLAY=wayland-0 "$MWC_DIR/build/xdgc" app=thief size=200x100 \
@@ -239,6 +239,17 @@ do_input click left
 check "a click on the status line gives the keyboard back" \
 	"[ \"\$(get pulseControl kbfocus)\" = 1 ]"
 pixel_is "and the frame is active again" $((WX + 2)) $((CY + ROW)) "$SEL"
+# A layer surface that takes the keyboard, as a launcher does, leaves the window active
+# in mwc, and mwc's frames with it: so is this one.
+WAYLAND_DISPLAY=wayland-0 "$MWC_DIR/build/layerc" keyboard=exclusive anchor=bottom,right \
+	>"$SMOKE_DIR/layer.log" 2>&1 &
+PID_layer=$!
+check "a layer surface takes the keyboard, the window stays active" \
+	"[ \"\$(get pulseControl kbfocus)\" = 0 ] && [ \"\$(get pulseControl active)\" = 1 ]"
+pixel_is "and so does its frame" $((WX + 2)) $((CY + ROW)) "$SEL"
+kill "$PID_layer" 2>/dev/null
+wait "$PID_layer" 2>/dev/null
+check "the keyboard comes back" "[ \"\$(get pulseControl kbfocus)\" = 1 ]"
 wait_pixel "the scale is filled up to the slider" $(($(thumb_mid 50) - 20)) "$ROW" "$SEL"
 wait_pixel "and empty behind it" $(($(thumb_mid 50) + 20)) "$ROW" "$TROUGH"
 # The widgets have mwc's bevel of 1, the frame its 2: the fill starts right inside.
@@ -503,6 +514,8 @@ wait_pixel "and only that far" $(($(thumb_mid 90) + 20)) "$ROW" "$TROUGH"
 do_input move $((CX + $(thumb_mid 90))) $((CY + ROW))
 do_input down left
 pactl set-sink-volume first 30%
+# Not a wait for anything: without it the change mostly arrives during the drag too,
+# and if not, the release still shows it. It only makes the drag case the likely one.
 sleep 0.2
 do_input up left
 wait_pixel "a change during a drag shows after the release" $(thumb_mid 60) "$ROW" "$TROUGH"

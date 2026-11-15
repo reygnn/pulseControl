@@ -21,7 +21,7 @@
  *
  * It asks for no server-side decoration and draws its own frame: only mwm's thin
  * border, no title bar, no buttons, no resize handles. The border takes the active
- * colour while it has the keyboard, as mwc's frames do.
+ * colour while it is the active window, as mwc's frames do.
  *
  * Everything runs in one thread: Pulse's main loop does the waiting, and its
  * poll function watches the Wayland socket as well.
@@ -127,6 +127,7 @@ static int buf_scale = 1;       /* buffer pixels per surface pixel */
 static int need_commit;         /* a configure waits for its commit */
 static int pend_w, pend_h;      /* size of the configure in progress */
 static int pend_bound;          /* ... which is maximized, tiled or the like */
+static int pend_activated;      /* ... and of the active window */
 
 static struct wl_pointer *pointer;
 static struct wl_surface *ptr_surface;
@@ -151,7 +152,7 @@ static uint64_t repeat_next;
 static int repeat_rate = 25, repeat_delay = 600;
 
 static int W = 320, H, float_w = 320, float_h, min_w, min_h;
-static int focused;             /* it has the keyboard: the active frame */
+static int activated;           /* the active window: the active frame */
 static uint32_t px_bg, px_top, px_bot, px_trough, px_sel, px_list, px_paper;
 static uint32_t xc_fg, xc_dim, xc_err, xc_sel_fg;
 static cairo_t *cr;             /* what fill, bevel and text draw on */
@@ -619,7 +620,7 @@ static void bevel(struct rect r, int raised)
 /* mwm's thin border: a raised bevel and one line of the face inside it. */
 static void draw_frame(void)
 {
-	uint32_t face = focused ? px_sel : px_bg;
+	uint32_t face = activated ? px_sel : px_bg;
 	fill(face, 0, 0, W, FRAME);
 	fill(face, 0, H - FRAME, W, FRAME);
 	fill(face, 0, 0, FRAME, H);
@@ -788,6 +789,8 @@ static int draw(void)
 	cr = b->cr;
 	cairo_identity_matrix(cr);
 	cairo_scale(cr, sc, sc);
+	/* Glyphs hinted and placed for the buffer's pixels, not the surface's. */
+	pango_cairo_update_layout(cr, plo);
 	paint();
 	cairo_surface_flush(b->cs);
 	if (frame)
@@ -1004,7 +1007,9 @@ static void kb_keymap(void *data, struct wl_keyboard *k, uint32_t format,
 	close(fd);
 	if (s == MAP_FAILED)
 		return;
-	struct xkb_keymap *map = xkb_keymap_new_from_string(xkb, s,
+	/* The protocol doesn't promise a NUL at the end, and reading for one could
+	 * run past the mapping. */
+	struct xkb_keymap *map = xkb_keymap_new_from_buffer(xkb, s, strnlen(s, size),
 		XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
 	munmap(s, size);
 	struct xkb_state *state = map ? xkb_state_new(map) : NULL;
@@ -1022,15 +1027,11 @@ static void kb_keymap(void *data, struct wl_keyboard *k, uint32_t format,
 static void kb_enter(void *data, struct wl_keyboard *k, uint32_t serial,
 	struct wl_surface *s, struct wl_array *keys)
 {
-	focused = 1;
-	dirty = 1;
 }
 
 static void kb_leave(void *data, struct wl_keyboard *k, uint32_t serial,
 	struct wl_surface *s)
 {
-	focused = 0;
-	dirty = 1;
 	repeat_kc = 0;
 	edit_cancel();
 }
@@ -1237,9 +1238,6 @@ static void seat_capabilities(void *data, struct wl_seat *s, uint32_t caps)
 		wl_keyboard_release(keyboard);
 		keyboard = NULL;
 		repeat_kc = 0;
-		/* Gone without a leave: no keyboard, no active frame. */
-		focused = 0;
-		dirty = 1;
 	}
 }
 
@@ -1302,6 +1300,9 @@ static void main_xdg_configure(void *data, struct xdg_surface *s,
 		float_w = W;
 		float_h = H;
 	}
+	/* By the state, not the keyboard: mwc keeps a window active while a layer
+	 * surface such as a launcher has the keys, and draws its frames so. */
+	activated = pend_activated;
 	configured = 1;
 	need_commit = 1;
 	dirty = 1;
@@ -1319,9 +1320,11 @@ static void top_configure(void *data, struct xdg_toplevel *t, int32_t w,
 	pend_w = w;
 	pend_h = h;
 	pend_bound = 0;
+	pend_activated = 0;
 	wl_array_for_each(st, states)
-		if (*st != XDG_TOPLEVEL_STATE_ACTIVATED &&
-		    *st != XDG_TOPLEVEL_STATE_RESIZING)
+		if (*st == XDG_TOPLEVEL_STATE_ACTIVATED)
+			pend_activated = 1;
+		else if (*st != XDG_TOPLEVEL_STATE_RESIZING)
 			pend_bound = 1;
 }
 
