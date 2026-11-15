@@ -375,7 +375,8 @@ static void theme_init(void)
 	px_bg = bg;
 	px_top = mix(bg, 0xffffff, 0.55f);
 	px_bot = mix(bg, 0x000000, 0.5f);
-	px_trough = mix(bg, 0x000000, 0.12f);
+	/* mwc's scrollbar trough: halfway from the face to the bottom shadow. */
+	px_trough = mix(bg, 0x000000, 0.25f);
 	px_list = mix(bg, 0xffffff, 0.3f);
 	px_paper = 0xf6f6f6;
 	px_sel = setting("MWC_ACTIVE", "activeBackground", 0x7387ad);

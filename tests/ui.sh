@@ -33,7 +33,7 @@ mkdir -p "$HOME"
 : >"$SC_LOG"
 SHOT=$SMOKE_DIR/ui.png
 SEL=7387ad
-TROUGH=999dac
+TROUGH=838692
 ERR_SHOT=$SC_DIR/build/ui-last.png
 
 pa_start() {
