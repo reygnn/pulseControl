@@ -580,6 +580,18 @@ shows "the old default is back" 45
 pactl unload-module module-null-sink
 wait_pixel "without a sink the scale is empty" $((S0 + 2)) "$ROW" "$TROUGH"
 status_has "the status line says so" 8a0303
+# The speaker is dimmed then, but still at 4.5:1 on the face: 3d3e44 as in
+# digitalClock. Drawn without antialiasing, so exact; the text has subpixel fringes.
+dim_ok=
+for ((i = 0; i < 30; i++)); do
+	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null &&
+		[ "$(build/pngtool count "$SHOT" $((CX + 6)) $((CY + 6)) "$BARH" "$BARH" \
+			3d3e44 0)" -gt 8 ] && { dim_ok=1; break; }
+	sleep 0.1
+done
+[ -n "$dim_ok" ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
+	fail "the dimmed speaker is not 3d3e44"; }
+echo "ok: the dimmed speaker is 3d3e44"
 do_input key Up         # must not crash
 pactl load-module module-null-sink sink_name=first \
 	sink_properties=device.description=First >/dev/null
