@@ -16,6 +16,12 @@ While the slider is held or a change is on its way, a new default output waits: 
 volume goes to the old one until the release or the answer, then the window follows.
 
 
+## Look
+
+The scale's trough is lighter than mwc's scrollbar trough, as in osDisplay: at mwc's
+shade it is as bright as the fill in the active colour beside it.
+
+
 ## Size
 
 The window can be resized only from the keyboard (Alt+F8 in mwc), since it has no

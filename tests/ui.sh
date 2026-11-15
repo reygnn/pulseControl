@@ -33,7 +33,7 @@ mkdir -p "$HOME"
 : >"$SC_LOG"
 SHOT=$SMOKE_DIR/ui.png
 SEL=7387ad
-TROUGH=838692
+TROUGH=999dac
 ERR_SHOT=$SC_DIR/build/ui-last.png
 rm -f "$ERR_SHOT"
 
