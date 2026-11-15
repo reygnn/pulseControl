@@ -35,6 +35,16 @@ SHOT=$SMOKE_DIR/ui.png
 SEL=7387ad
 TROUGH=838692
 ERR_SHOT=$SC_DIR/build/ui-last.png
+rm -f "$ERR_SHOT"
+
+# Only -v, and it needs no compositor.
+want="pulseControl $(sed -n 's/.*_VERSION "\(.*\)"/\1/p' "$SC_DIR/version.h")"
+[ "$("$SC" -v)" = "$want" ] || fail "-v prints '$("$SC" -v)', not '$want'"
+echo "ok: -v prints the version"
+for arg in -h --help -x; do
+	"$SC" "$arg" 2>/dev/null && fail "$arg is taken"
+done
+echo "ok: anything else is a usage error"
 
 pa_start() {
 	pulseaudio -n --daemonize=no --exit-idle-time=-1 --disable-shm=yes \
@@ -193,7 +203,9 @@ shows() {
 }
 
 # A compositor left stopped would hang the screenshot and the cleanup.
-trap 'kill -CONT "$pid" 2>/dev/null; WAYLAND_DISPLAY=wayland-0 grim "$ERR_SHOT" 2>/dev/null; cleanup' EXIT
+# A test that kept its own screenshot keeps it.
+trap 'kill -CONT "$pid" 2>/dev/null; [ -e "$ERR_SHOT" ] ||
+	WAYLAND_DISPLAY=wayland-0 grim "$ERR_SHOT" 2>/dev/null; cleanup' EXIT
 
 # The window that takes the keyboard away stays clear of pulseControl.
 mkdir -p "$XDG_CONFIG_HOME/mwc"
@@ -246,17 +258,16 @@ do_input key space
 expect_mute "Space unmutes" first no
 wait_pixel "the fill is back" $((S0 + 2)) "$ROW" "$SEL"
 
-# With Alt or Ctrl these keys are something else, and a plain w is nothing.
+# With Alt or Ctrl these keys are something else, and a plain w is nothing. Checked
+# by the m after them: it comes later, so they are done when it has muted.
 do_input key alt+q
 do_input key ctrl+m
 do_input key w
-sleep 0.2
+do_input key m
+expect_mute "ctrl+m doesn't mute, m after it does" first yes
 kill -0 "$SC_PID" 2>/dev/null || fail "alt+q or w ended pulseControl"
-expect_mute "ctrl+m doesn't mute" first no
 
 # Changing the volume leaves the muting alone.
-do_input key m
-expect_mute "muted again" first yes
 do_input key Up
 expect_vol "a muted sink takes a step" first 55 55
 expect_mute "and stays muted" first yes
@@ -280,16 +291,21 @@ wait_pixel "Esc closes the field" "$FIELD_X" "$FIELD_Y" c6c9d5
 kill -0 "$SC_PID" 2>/dev/null || fail "Esc in the field ended pulseControl"
 expect_vol "and leaves the volume" first 42 42
 
+# Keys in the field, checked by the same keys once it is closed.
 do_input key 5
 do_input key q
 do_input key m
-sleep 0.2
-kill -0 "$SC_PID" 2>/dev/null || fail "q in the field ended pulseControl"
-expect_mute "m in the field doesn't mute" first no
 do_input key Up
-sleep 0.2
-expect_vol "Up in the field doesn't step" first 42 42
 do_input key Escape
+do_input key m
+expect_mute "m in the field doesn't mute, after it does" first yes
+kill -0 "$SC_PID" 2>/dev/null || fail "q in the field ended pulseControl"
+do_input key Up
+expect_vol "Up in the field doesn't step, after it does" first 47 47
+do_input key Down
+do_input key m
+expect_mute "unmuted" first no
+expect_vol "back at 42" first 42 42
 
 for k in 1 0 1; do do_input key "$k"; done
 do_input key Return
@@ -314,8 +330,8 @@ do_input move $((CX + FIELD_X)) $((CY + ROW))
 do_input click left
 wait_pixel "a click opens the field" "$FIELD_X" "$FIELD_Y" f6f6f6
 do_input key Return
-sleep 0.2
-expect_vol "Return without typing changes nothing" first 5 5
+wait_pixel "Return without typing closes the field" "$FIELD_X" "$FIELD_Y" c6c9d5
+expect_vol "and changes nothing" first 5 5
 
 do_input click left
 do_input key 3
@@ -377,6 +393,43 @@ echo "ok: the selected volume is black"
 do_input key Escape
 wait_pixel "Esc closes the field" "$FIELD_X" "$FIELD_Y" c6c9d5
 
+# An open field with nothing typed shows the volume as it is now. Its ink differs
+# between 50 % and 11 %: counted once each, then 11 % set while the field is open.
+field_ink() {
+	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null &&
+		build/pngtool count "$SHOT" $((CX + W - 33)) $((CY + 10)) 20 $((BARH - 8)) 000000
+}
+open_field() {
+	do_input move $((CX + FIELD_X)) $((CY + ROW))
+	do_input click left
+	wait_pixel "$1" $((W - 13)) "$FIELD_Y" "$SEL"
+}
+field_shows() { # <ink>
+	local i
+	for ((i = 0; i < 30; i++)); do
+		[ "$(field_ink)" = "$1" ] && return 0
+		sleep 0.1
+	done
+	return 1
+}
+pactl set-sink-volume first 11%
+shows "11 % is shown" 11
+open_field "the field opens at 11 %"
+ink11=$(field_ink)
+do_input key Escape
+pactl set-sink-volume first 50%
+shows "50 % is shown" 50
+open_field "the field opens at 50 %"
+ink50=$(field_ink)
+[ "$ink11" != "$ink50" ] || fail "11 % and 50 % have the same ink ($ink11)"
+pactl set-sink-volume first 11%
+field_shows "$ink11" || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
+	fail "the open field doesn't follow the volume: ink $(field_ink), at 11 % $ink11"; }
+echo "ok: the open field follows another program"
+do_input key Escape
+pactl set-sink-volume first 50%
+shows "back at 50" 50
+
 # ---- mouse -------------------------------------------------------------------
 
 do_input move $((CX + S0 + 5)) $((CY + ROW))
@@ -397,8 +450,11 @@ expect_mute "and unmutes" first no
 do_input down left
 do_input move $((CX + $(thumb_mid 45))) $((CY + ROW))
 do_input up left
-sleep 0.2
-expect_mute "sliding off the speaker cancels the click" first no
+do_input move "$BX" $((CY + 6 + BARH / 2))
+do_input click left
+expect_mute "sliding off the speaker cancels the click, a click after it mutes" first yes
+do_input click left
+expect_mute "unmuted" first no
 
 # A click beside the slider puts it there; 75 % is well away from 45 %.
 do_input move $((CX + $(thumb_mid 75))) $((CY + ROW))
@@ -412,9 +468,11 @@ expect_vol "dragging past the left end gives 0" first 0 0
 do_input move $((CX + $(thumb_mid 50))) $((CY + ROW))
 expect_near "dragging back to the middle" first 50 50
 held=$(vol_of first)
+held=${held%% *}
 do_input up left
-sleep 0.2
-expect_vol "the release leaves it there" first $held
+do_input key Up
+expect_vol "the release leaves it there, a step goes on from it" first \
+	$((held + 5)) $((held + 5))
 
 # A press on the slider without moving changes nothing, wherever on it.
 pactl set-sink-volume first 40%
@@ -422,8 +480,10 @@ expect_vol "changed by another program" first 40 40
 shows "and shown" 40
 do_input move $((CX + $(thumb_mid 40) + 12)) $((CY + ROW))
 do_input click left
-sleep 0.2
-expect_vol "a click on the slider leaves the volume alone" first 40 40
+do_input key Up
+expect_vol "a click on the slider leaves the volume alone, a step goes on" first 45 45
+do_input key Down
+shows "back at 40" 40
 
 # Grabbed away from its middle, it moves from where it is.
 do_input down left
@@ -465,18 +525,15 @@ do_input up left
 # Above 100 %: shown, can go down, doesn't go up.
 pactl set-sink-volume first 130%
 wait_pixel "the slider stays inside the scale above 100 %" $((S1 - 5)) "$ROW" aeb2c3
+# Up and a grab of the slider keep it; Down after them lowers it from 130.
 do_input key Up
-sleep 0.2
-expect_vol "Up doesn't raise a volume above 100 %" first 130 130
 do_input move $((CX + $(thumb_mid 100))) $((CY + ROW))
 do_input down left
 do_input move $((CX + $(thumb_mid 100))) $((CY + ROW + 1))
 do_input move $((CX + $(thumb_mid 100) + 1)) $((CY + ROW + 1))
-sleep 0.2
-expect_vol "grabbing the slider keeps a volume above 100 %" first 130 130
 do_input up left
 do_input key Down
-expect_vol "Down lowers it" first 125 125
+expect_vol "neither Up nor a grab raise it above 100 %, Down lowers it" first 125 125
 pactl set-sink-volume first 96%
 shows "96 % is shown" 96
 do_input key Up
@@ -541,12 +598,31 @@ expect_vol "and works" first 35 35
 
 # ---- quitting ----------------------------------------------------------------
 
-for combo in Escape q ctrl+w; do
+for combo in Escape q ctrl+q ctrl+w; do
 	do_input key "$combo"
 	sc_exits "$combo"
 	check "$combo closes the window" '[ -z "$(get pulseControl w)" ]'
 	[ "$combo" = ctrl+w ] || sc_start
 done
+
+# ---- size --------------------------------------------------------------------
+
+# Taller by Alt+F8, then maximized and back: the height is the one from before. mwc
+# gives it back itself; one that leaves the size to the window relies on float_h.
+sc_start
+H0=$(get pulseControl h)
+do_input key alt+F8
+refresh
+do_input move $(global cursor x) $(($(global cursor y) + 40))
+do_input click left
+check "Alt+F8 makes it taller" "[ \"\$(get pulseControl h)\" -gt $H0 ]"
+H1=$(get pulseControl h)
+do_input key alt+F10
+check "maximized" "[ \"\$(get pulseControl max)\" = 1 ]"
+do_input key alt+F5
+check "restored at the height from before" \
+	"[ \"\$(get pulseControl max)\" != 1 ] && [ \"\$(get pulseControl h)\" = $H1 ]"
+sc_quit
 
 # ---- colours -----------------------------------------------------------------
 
@@ -569,6 +645,18 @@ done
 MWC_ACTIVE=rgb:0/ff/0 sc_start
 wait_pixel "MWC_ACTIVE=rgb:0/ff/0 is one" $((S0 + 2)) "$ROW" 00ff00
 sc_quit
+
+# A line too long to read at once is no setting, and neither is its rest, which
+# here would be one. The setting before it stays.
+{
+	echo 'Mwm*activeBackground: #ff0000'
+	printf '!%0510d' 0 | tr 0 x     # fgets reads 511 at once
+	echo 'Mwm*activeBackground: #00ff00'
+} >"$XDG_CONFIG_HOME/mwc/mwmrc"
+sc_start
+wait_pixel "the rest of a long line in mwmrc is no setting" $((S0 + 2)) "$ROW" ff0000
+sc_quit
+rm "$XDG_CONFIG_HOME/mwc/mwmrc"
 
 # Text in the colours mwc gives its titles: foreground on the background,
 # activeForeground on the active colour, as in the selected volume.
@@ -642,6 +730,13 @@ echo 'Mwm*HEADLESS-1*outputScale: 2' >"$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 check "a new scale loads the cursor again at once" \
 	"cursor_ok && [ \"\$(global cursor cw)\" = 24 ] && [ \"\$(global cursor cscale)\" = 2 ]"
+echo "cursor $(global cursor cw)x$(global cursor ch)@$(global cursor cscale)"
+sc_quit
+# A size past any theme is the largest there is, not an overflow. Still at scale 2.
+XCURSOR_SIZE=1000000000 sc_start
+do_input move $((2 * (CX + W / 2))) $((2 * (CY + H / 2)))
+check "a huge XCURSOR_SIZE gives the largest cursor" \
+	"cursor_ok && [ \"\$(global cursor cw)\" = 96 ]"
 echo "cursor $(global cursor cw)x$(global cursor ch)@$(global cursor cscale)"
 sc_quit
 rm "$XDG_CONFIG_HOME/mwc/mwmrc"

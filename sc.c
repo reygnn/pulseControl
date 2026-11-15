@@ -62,6 +62,8 @@
 #define THUMB 30        /* width of the scale's slider */
 #define STEP 5          /* percent per key press or wheel step */
 #define RETRY_MS 1000   /* between attempts to reach the sound server */
+#define MAX_SIZE 8192   /* a window's side, whatever a compositor asks */
+#define MAX_STEPS 20    /* wheel steps in one frame */
 #ifndef MAX            /* glib has them too */
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -147,7 +149,7 @@ static uint32_t repeat_kc;      /* xkb keycode of the repeating key, or 0 */
 static uint64_t repeat_next;
 static int repeat_rate = 25, repeat_delay = 600;
 
-static int W = 320, H, float_w = 320, min_h;
+static int W = 320, H, float_w = 320, float_h, min_w, min_h;
 static int focused;             /* it has the keyboard: the active frame */
 static uint32_t px_bg, px_top, px_bot, px_trough, px_sel, px_list, px_paper;
 static uint32_t xc_fg, xc_dim, xc_err, xc_sel_fg;
@@ -324,6 +326,14 @@ static char *mwmrc_get(const char *key, char *val, size_t n)
 	char *found = NULL;
 	size_t kl = strlen(key);
 	while (fgets(line, sizeof line, f)) {
+		size_t ll = strlen(line);
+		/* Too long for the buffer: no setting, and its rest is none either. */
+		if (ll && line[ll - 1] != '\n' && !feof(f)) {
+			int c;
+			while ((c = getc(f)) != EOF && c != '\n')
+				;
+			continue;
+		}
 		char *p = line;
 		while (isspace((unsigned char)*p))
 			p++;
@@ -343,8 +353,11 @@ static char *mwmrc_get(const char *key, char *val, size_t n)
 		char *e = p + strlen(p);
 		while (e > p && isspace((unsigned char)e[-1]))
 			*--e = 0;
-		if ((size_t)snprintf(val, n, "%s", p) < n)
+		/* One too long to keep leaves the line before it. */
+		if ((size_t)(e - p) < n) {
+			memcpy(val, p, e - p + 1);
 			found = val;
+		}
 	}
 	fclose(f);
 	return found;
@@ -403,8 +416,9 @@ static void theme_init(void)
 	font_desc = PANGO_PIXELS_CEIL(pango_font_metrics_get_descent(m));
 	pango_font_metrics_unref(m);
 	pango_font_description_free(desc);
+	g_object_unref(pctx);   /* the layout holds it */
 	barh = font_asc + font_desc + 10;
-	min_h = H = 2 * (FRAME + PAD) + 2 * barh + 4;
+	min_h = H = float_h = 2 * (FRAME + PAD) + 2 * barh + 4;
 }
 
 /* ---- PulseAudio --------------------------------------------------------- */
@@ -505,6 +519,11 @@ static void toggle_mute(void)
 static void ctx_event(pa_context *c, pa_subscription_event_type_t t, uint32_t idx,
 	void *u)
 {
+	/* Another sink's volume, or a stream starting on it, is none of ours. A new
+	 * default comes as a server event. */
+	if ((t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) == PA_SUBSCRIPTION_EVENT_SINK &&
+	    sink_state == SINK_OK && idx != sink_idx)
+		return;
 	/* Otherwise the last acknowledgement or the release asks. */
 	if (!pending && !dragging)
 		refresh();
@@ -724,6 +743,10 @@ static void paint(void)
 	fill(editing ? px_paper : px_list, fx, fy, fw, fh);
 	bevel(r_pct, 0);
 	if (editing) {
+		/* Nothing typed yet: the volume as it is now, also after another
+		 * program or a volume key changed it. */
+		if (edit_fresh)
+			snprintf(edit_buf, sizeof edit_buf, "%d", sink_pct);
 		snprintf(s, sizeof s, "%s %%", edit_buf);
 		int tw = textw(s), tpos = fx + fw - FIELD_PAD / 2 - tw;
 		if (edit_fresh) {
@@ -754,19 +777,23 @@ static void paint(void)
 /* 0 if the compositor holds both buffers: try again after a release. */
 static int draw(void)
 {
-	struct shmbuf *b = get_buffer(W * buf_scale, H * buf_scale);
+	/* A pool's size is an int32: a huge window gets fewer pixels, not an error. */
+	int sc = buf_scale;
+	while (sc > 1 && (int64_t)W * sc * 4 * H * sc > INT32_MAX)
+		sc--;
+	struct shmbuf *b = get_buffer(W * sc, H * sc);
 	if (!b)
 		return 0;
 	cr = b->cr;
 	cairo_identity_matrix(cr);
-	cairo_scale(cr, buf_scale, buf_scale);
+	cairo_scale(cr, sc, sc);
 	paint();
 	cairo_surface_flush(b->cs);
 	if (frame)
 		wl_callback_destroy(frame);
 	frame = wl_surface_frame(surface);
 	wl_callback_add_listener(frame, &frame_listener, NULL);
-	wl_surface_set_buffer_scale(surface, buf_scale);
+	wl_surface_set_buffer_scale(surface, sc);
 	wl_surface_attach(surface, b->wl, 0, 0);
 	wl_surface_damage_buffer(surface, 0, 0, b->w, b->h);
 	wl_surface_commit(surface);
@@ -1151,7 +1178,8 @@ static void ptr_axis_discrete(void *data, struct wl_pointer *p, uint32_t axis,
 	int32_t steps)
 {
 	if (axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
-		axis_steps += steps;
+		axis_steps = MAX(MIN(axis_steps + MAX(MIN(steps, MAX_STEPS), -MAX_STEPS),
+			MAX_STEPS), -MAX_STEPS);
 }
 
 /* Wheels report steps; touchpads only a distance, of which AXIS_STEP makes
@@ -1163,8 +1191,9 @@ static void ptr_frame(void *data, struct wl_pointer *p)
 	if (steps) {
 		axis_acc = 0;
 	} else {
-		steps = (int)(axis_acc / AXIS_STEP);
-		axis_acc -= steps * AXIS_STEP;
+		double q = axis_acc / AXIS_STEP;
+		steps = (int)MAX(MIN(q, MAX_STEPS), -MAX_STEPS);
+		axis_acc = fabs(q) > MAX_STEPS ? 0 : axis_acc - steps * AXIS_STEP;
 	}
 	axis_steps = 0;
 	if (steps && !dragging) {
@@ -1234,12 +1263,14 @@ static const struct xdg_wm_base_listener wm_base_listener = { wm_ping };
 static void registry_global(void *data, struct wl_registry *r, uint32_t name,
 	const char *iface, uint32_t ver)
 {
-	if (!strcmp(iface, wl_compositor_interface.name)) {
+	/* damage_buffer needs wl_compositor 4; wl_seat 5 brings the pointer's frame,
+	 * which the wheel waits for, and release. */
+	if (!strcmp(iface, wl_compositor_interface.name) && ver >= 4) {
 		compositor = wl_registry_bind(r, name, &wl_compositor_interface,
 			MIN(ver, 6));
 	} else if (!strcmp(iface, wl_shm_interface.name)) {
 		shm = wl_registry_bind(r, name, &wl_shm_interface, 1);
-	} else if (!strcmp(iface, wl_seat_interface.name) && !seat) {
+	} else if (!strcmp(iface, wl_seat_interface.name) && !seat && ver >= 5) {
 		seat = wl_registry_bind(r, name, &wl_seat_interface, MIN(ver, 7));
 		wl_seat_add_listener(seat, &seat_listener, NULL);
 	} else if (!strcmp(iface, xdg_wm_base_interface.name)) {
@@ -1262,10 +1293,14 @@ static void main_xdg_configure(void *data, struct xdg_surface *s,
 	uint32_t serial)
 {
 	xdg_surface_ack_configure(s, serial);
-	W = pend_w > 0 ? pend_w : float_w;
-	H = pend_h > 0 ? pend_h : min_h;
-	if (!pend_bound)
+	/* Not below the minimum, which a tiling compositor may ignore: the scale
+	 * would have no room. */
+	W = MIN(MAX(pend_w > 0 ? pend_w : float_w, min_w), MAX_SIZE);
+	H = MIN(MAX(pend_h > 0 ? pend_h : float_h, min_h), MAX_SIZE);
+	if (!pend_bound) {
 		float_w = W;
+		float_h = H;
+	}
 	configured = 1;
 	need_commit = 1;
 	dirty = 1;
@@ -1304,14 +1339,24 @@ static void cursor_load(void)
 {
 	if (cursor_scale == buf_scale)
 		return;
+	/* The surface must not show a buffer of the theme it destroys. */
+	if (cursor_surf) {
+		wl_surface_attach(cursor_surf, NULL, 0, 0);
+		wl_surface_commit(cursor_surf);
+	}
 	if (cursor_theme)
 		wl_cursor_theme_destroy(cursor_theme);
 	cursor_theme = NULL;
 	cursor_img = NULL;
 	cursor_scale = buf_scale;
 	const char *s = getenv("XCURSOR_SIZE");
-	int size = s && atoi(s) > 0 ? atoi(s) : 24;
-	cursor_theme = wl_cursor_theme_load(getenv("XCURSOR_THEME"), size * buf_scale, shm);
+	long size = s ? strtol(s, NULL, 10) : 0;
+	if (size <= 0)
+		size = 24;
+	/* No theme has more; and times the scale it must stay an int. */
+	size = MIN(size, 256);
+	cursor_theme = wl_cursor_theme_load(getenv("XCURSOR_THEME"),
+		(int)size * buf_scale, shm);
 	if (!cursor_theme)
 		return;
 	struct wl_cursor *c = wl_cursor_theme_get_cursor(cursor_theme, "default");
@@ -1356,6 +1401,7 @@ static void surf_leave(void *data, struct wl_surface *s, struct wl_output *o)
 
 static void surf_preferred_scale(void *data, struct wl_surface *s, int32_t factor)
 {
+	factor = MIN(factor, 16);       /* no output is denser */
 	if (factor < 1 || factor == buf_scale)
 		return;
 	buf_scale = factor;
@@ -1388,7 +1434,7 @@ static void setup_window(void)
 	xdg_toplevel_set_app_id(toplevel, "pulseControl");
 	xdg_toplevel_set_title(toplevel, "pulseControl");
 	/* Room for all of it with the font in use, and a pixel per percent. */
-	int min_w = MAX(220, 2 * (FRAME + PAD) + barh + textw("100 %") + 2 * BEV + FIELD_PAD + 12 +
+	min_w = MAX(220, 2 * (FRAME + PAD) + barh + textw("100 %") + 2 * BEV + FIELD_PAD + 12 +
 		2 * BEV + THUMB + 100);
 	float_w = W = MAX(float_w, min_w);
 	xdg_toplevel_set_min_size(toplevel, min_w, min_h);
@@ -1431,11 +1477,10 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	if (argc > 1) {
-		int help = !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help");
 		fprintf(stderr, "usage: pulseControl [-v]\n"
 			"Environment: SC_FONT (default \"Sans 10\"), "
 			"MWC_INACTIVE, MWC_ACTIVE.\n");
-		return help ? 0 : 1;
+		return 1;
 	}
 	setlocale(LC_ALL, "");
 	signal(SIGPIPE, SIG_IGN);       /* as libpulse asks of its programs */
@@ -1453,8 +1498,8 @@ int main(int argc, char **argv)
 	if (wl_display_roundtrip(dpy) < 0)
 		lost_connection();
 	if (!compositor || !shm || !wm_base) {
-		fprintf(stderr, "pulseControl: the compositor lacks wl_compositor, wl_shm "
-			"or xdg_wm_base\n");
+		fprintf(stderr, "pulseControl: the compositor lacks wl_compositor 4, "
+			"wl_shm or xdg_wm_base\n");
 		return 1;
 	}
 	cursor_load();

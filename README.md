@@ -53,10 +53,12 @@ server the status line says so, and pulseControl tries again every second.
 | click or drag on the scale | set the volume |
 | digits, or a click on the percentage | type the volume |
 | m, Space, a click on the speaker | mute on and off |
+| the keyboard's volume keys | louder, quieter, mute |
 | Esc, q, Ctrl+Q, Ctrl+W | quit |
 
 In the field Return takes the typed volume and Esc cancels it. With Alt, Super or Ctrl
-held no key acts, except Ctrl+Q and Ctrl+W. The balance between the channels is kept.
+held no key acts, except Ctrl+Q, Ctrl+W and the volume keys, which also act in the
+field. The balance between the channels is kept.
 
 
 ## Configuration

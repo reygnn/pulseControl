@@ -12,6 +12,9 @@ pulseControl only lowers it.
 
 A typed volume above 0 ends the muting; a typed 0 and every other change leave it.
 
+While the slider is held or a change is on its way, a new default output waits: the
+volume goes to the old one until the release or the answer, then the window follows.
+
 
 ## Size
 

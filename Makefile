@@ -4,8 +4,18 @@ PREFIX ?= /usr/local
 PKG_CONFIG ?= pkg-config
 PKGS = libpulse wayland-client wayland-cursor xkbcommon cairo pangocairo
 
-WAYLAND_PROTOCOLS := $(shell $(PKG_CONFIG) --variable=pkgdatadir wayland-protocols)
-WAYLAND_SCANNER := $(shell $(PKG_CONFIG) --variable=wayland_scanner wayland-scanner)
+WAYLAND_PROTOCOLS := $(shell $(PKG_CONFIG) --variable=pkgdatadir wayland-protocols 2>/dev/null)
+WAYLAND_SCANNER := $(shell $(PKG_CONFIG) --variable=wayland_scanner wayland-scanner 2>/dev/null)
+# Said plainly, rather than as a missing /stable/xdg-shell/xdg-shell.xml; but not to
+# `make clean`, which needs neither.
+ifneq ($(filter-out clean uninstall,$(or $(MAKECMDGOALS),all)),)
+ifeq ($(WAYLAND_PROTOCOLS),)
+$(error pkg-config finds no wayland-protocols)
+endif
+ifeq ($(WAYLAND_SCANNER),)
+$(error pkg-config finds no wayland-scanner)
+endif
+endif
 XDG_SHELL = $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml
 
 PROTO_H = build/xdg-shell-client-protocol.h
