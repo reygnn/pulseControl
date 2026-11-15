@@ -766,6 +766,36 @@ cursor_dest() {
 	grep -o 'wp_viewport#[0-9]*\.set_destination(-\?[0-9]*, -\?[0-9]*)' "$SC_LOG" |
 		tail -1 | sed 's/.*(\(.*\), \(.*\))/\1 \2/'
 }
+# Buffers destroyed while the cursor surface still showed them: a theme gone too early.
+cursor_kept() {
+	awk '
+	match($0, /wl_pointer#[0-9]+\.set_cursor\([0-9]+, wl_surface#[0-9]+/) {
+		split(substr($0, RSTART, RLENGTH), f, /[#(, ]+/); cur = f[5]
+	}
+	match($0, /wl_surface#[0-9]+\.attach\((wl_buffer#[0-9]+|nil)/) {
+		split(substr($0, RSTART, RLENGTH), f, /[#.()]+/)
+		att[f[2]] = f[4] == "nil" ? "" : f[5]
+	}
+	match($0, /wl_buffer#[0-9]+\.destroy\(\)/) {
+		split(substr($0, RSTART, RLENGTH), f, /[#.()]+/)
+		if (cur != "" && att[cur] == f[2]) print f[2]
+	}' "$SC_LOG"
+}
+# How often the cursor surface was left empty since line $1 of the log: with the pointer
+# on the window it never should be, or the cursor flickers. From the scale change on, as
+# an empty surface at the start is right: the scale often comes before the first enter.
+# The whole log is read, for which surface is the cursor's.
+cursor_blank() {
+	awk -v from="$1" '
+	match($0, /wl_pointer#[0-9]+\.set_cursor\([0-9]+, wl_surface#[0-9]+/) {
+		split(substr($0, RSTART, RLENGTH), f, /[#(, ]+/); cur = f[5]
+	}
+	match($0, /wl_surface#[0-9]+\.attach\(nil/) {
+		split(substr($0, RSTART, RLENGTH), f, /[#.()]+/)
+		if (NR >= from && f[2] == cur) n++
+	}
+	END { print n + 0 }' "$SC_LOG"
+}
 echo 'Mwm*HEADLESS-1*outputScale: 4' >"$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 check "the output is scaled by 4" "[ \"\$(global output_HEADLESS-1 scale)\" = 400 ]"
@@ -777,6 +807,7 @@ check "a cursor of 30 at scale 4 is set at scale 1" \
 check "and the viewport shows it at 8" "[ \"\$(cursor_dest)\" = '8 8' ]"
 echo "cursor $(global cursor cw)x$(global cursor ch)@$(global cursor cscale) at $(cursor_dest)"
 # Back to 2 with the pointer kept on the window: the cursor follows without an enter.
+FROM=$(($(wc -l <"$SC_LOG") + 1))
 echo 'Mwm*HEADLESS-1*outputScale: 2' >"$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 check "a new scale loads the cursor again at once" \
@@ -784,6 +815,26 @@ check "a new scale loads the cursor again at once" \
 check "there the scale divides it, and the viewport is unset" \
 	"[ \"\$(cursor_dest)\" = '-1 -1' ]"
 echo "cursor $(global cursor cw)x$(global cursor ch)@$(global cursor cscale) at $(cursor_dest)"
+# The new theme is shown before the old one goes, so no buffer goes while shown.
+[ -z "$(cursor_kept)" ] || fail "with the pointer on it, the cursor showed destroyed buffers"
+echo "ok: with the pointer on the window no cursor buffer goes while shown"
+[ "$(cursor_blank "$FROM")" = 0 ] || fail "with the pointer on it, the cursor was left empty"
+echo "ok: and the cursor is never empty"
+# The pointer leaves, the scale changes: the surface lets go of the old theme's buffer
+# before that goes.
+do_input move 1279 719
+check "the pointer leaves the window" "grep -q 'wl_pointer#[0-9]*\.leave(' \"$SC_LOG\""
+GONE=$(grep -c 'wl_buffer#[0-9]*\.destroy()' "$SC_LOG")
+echo 'Mwm*HEADLESS-1*outputScale: 4' >"$XDG_CONFIG_HOME/mwc/mwmrc"
+reload_mwc
+check "the output is scaled by 4 again" "[ \"\$(global output_HEADLESS-1 scale)\" = 400 ]"
+check "the old theme is gone" \
+	"[ \"\$(grep -c 'wl_buffer#[0-9]*\.destroy()' \"$SC_LOG\")\" -gt $GONE ]"
+[ -z "$(cursor_kept)" ] || fail "with the pointer away, the cursor showed destroyed buffers"
+echo "ok: with the pointer away no cursor buffer goes while shown"
+echo 'Mwm*HEADLESS-1*outputScale: 2' >"$XDG_CONFIG_HOME/mwc/mwmrc"
+reload_mwc
+check "the output is scaled by 2 again" "[ \"\$(global output_HEADLESS-1 scale)\" = 200 ]"
 sc_quit
 # A size past any theme is the largest there is, not an overflow. Still at scale 2.
 XCURSOR_SIZE=1000000000 sc_start

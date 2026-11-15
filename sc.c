@@ -145,8 +145,7 @@ static struct wp_viewporter *viewporter;
 static struct wp_viewport *cursor_vp;
 static int cursor_vw, cursor_vh; /* its size on the window, if the viewport sets it */
 static uint32_t ptr_serial;      /* of the last enter, to set the cursor again */
-static void cursor_load(void);
-static void cursor_set(void);
+static void cursor_update(void);
 
 static struct wl_keyboard *keyboard;
 static struct xkb_context *xkb;
@@ -1116,8 +1115,7 @@ static void ptr_enter(void *data, struct wl_pointer *p, uint32_t serial,
 	ptr_x = wl_fixed_to_int(x);
 	ptr_y = wl_fixed_to_int(y);
 	ptr_serial = serial;
-	cursor_load();
-	cursor_set();
+	cursor_update();
 }
 
 /* Not every compositor keeps the pointer on a window while a button is held,
@@ -1390,46 +1388,13 @@ static const struct xdg_toplevel_listener toplevel_listener = {
 	.close = top_close,
 };
 
-/* The theme's cursor at the window's scale, loaded again when that changes. */
-static void cursor_load(void)
+/* The buffer scale and viewport for the loaded image. A theme has only some
+ * sizes: Adwaita gives 30 for 32. A buffer scale that doesn't divide the image is
+ * a protocol error. With a viewport the buffer is shown at its size over the
+ * scale, as mwc shows its own cursor; without, at the largest scale up to the
+ * window's that divides it, and that much larger. */
+static void cursor_fit(void)
 {
-	if (cursor_scale == buf_scale)
-		return;
-	/* The surface must not show a buffer of the theme it destroys. */
-	if (cursor_surf) {
-		wl_surface_attach(cursor_surf, NULL, 0, 0);
-		wl_surface_commit(cursor_surf);
-	}
-	if (cursor_theme)
-		wl_cursor_theme_destroy(cursor_theme);
-	cursor_theme = NULL;
-	cursor_img = NULL;
-	cursor_scale = 0;
-	const char *s = getenv("XCURSOR_SIZE");
-	long size = s ? strtol(s, NULL, 10) : 0;
-	if (size <= 0)
-		size = 24;
-	/* No theme has more; and times the scale it must stay an int. */
-	size = MIN(size, 256);
-	cursor_theme = wl_cursor_theme_load(getenv("XCURSOR_THEME"),
-		(int)size * buf_scale, shm);
-	if (!cursor_theme)
-		return;         /* tried again on the next enter */
-	struct wl_cursor *c = wl_cursor_theme_get_cursor(cursor_theme, "default");
-	if (!c)
-		c = wl_cursor_theme_get_cursor(cursor_theme, "left_ptr");
-	if (!c)
-		return;
-	cursor_img = c->images[0];
-	cursor_scale = buf_scale;
-	if (!cursor_surf)
-		cursor_surf = wl_compositor_create_surface(compositor);
-	if (viewporter && !cursor_vp)
-		cursor_vp = wp_viewporter_get_viewport(viewporter, cursor_surf);
-	/* A theme has only some sizes: Adwaita gives 30 for 32. A buffer scale that
-	 * doesn't divide the image is a protocol error. With a viewport the buffer is
-	 * shown at its size over the scale, as mwc shows its own cursor; without, at
-	 * the largest scale up to the window's that divides it, and that much larger. */
 	int w = cursor_img->width, h = cursor_img->height, sc = buf_scale;
 	cursor_buf_scale = 1;
 	cursor_vw = cursor_vh = -1;
@@ -1447,11 +1412,11 @@ static void cursor_load(void)
 	}
 }
 
-/* The cursor on the window, while the pointer is over it. */
-static void cursor_set(void)
+/* The cursor on the window, while the pointer is over it; 0 if not shown. */
+static int cursor_show(void)
 {
 	if (!cursor_img || !pointer || !ptr_surface)
-		return;
+		return 0;
 	int hx = cursor_img->hotspot_x / cursor_buf_scale;
 	int hy = cursor_img->hotspot_y / cursor_buf_scale;
 	if (cursor_vw > 0) {
@@ -1466,8 +1431,52 @@ static void cursor_set(void)
 		wp_viewport_set_destination(cursor_vp, cursor_vw, cursor_vh);
 	wl_surface_set_buffer_scale(cursor_surf, cursor_buf_scale);
 	wl_surface_attach(cursor_surf, wl_cursor_image_get_buffer(cursor_img), 0, 0);
-	wl_surface_damage_buffer(cursor_surf, 0, 0, cursor_img->width, cursor_img->height);
+	wl_surface_damage_buffer(cursor_surf, 0, 0, cursor_img->width,
+		cursor_img->height);
 	wl_surface_commit(cursor_surf);
+	return 1;
+}
+
+/* The theme's cursor at the window's scale, loaded again when that changes, and
+ * shown if the pointer is on the window. The new theme first: a failed load keeps
+ * the old cursor and is tried again on the next enter. The old theme's buffers go
+ * with it, so the surface shows the new cursor or none before it goes. */
+static void cursor_update(void)
+{
+	if (cursor_scale != buf_scale) {
+		const char *s = getenv("XCURSOR_SIZE");
+		long size = s ? strtol(s, NULL, 10) : 0;
+		if (size <= 0)
+			size = 24;
+		/* No theme has more; and times the scale it must stay an int. */
+		size = MIN(size, 256);
+		struct wl_cursor_theme *t = wl_cursor_theme_load(getenv("XCURSOR_THEME"),
+			(int)size * buf_scale, shm);
+		struct wl_cursor *c = t ? wl_cursor_theme_get_cursor(t, "default") : NULL;
+		if (t && !c)
+			c = wl_cursor_theme_get_cursor(t, "left_ptr");
+		if (c) {
+			struct wl_cursor_theme *old = cursor_theme;
+			cursor_theme = t;
+			cursor_img = c->images[0];
+			cursor_scale = buf_scale;
+			if (!cursor_surf)
+				cursor_surf = wl_compositor_create_surface(compositor);
+			if (viewporter && !cursor_vp)
+				cursor_vp = wp_viewporter_get_viewport(viewporter, cursor_surf);
+			cursor_fit();
+			if (!cursor_show() && old) {
+				wl_surface_attach(cursor_surf, NULL, 0, 0);
+				wl_surface_commit(cursor_surf);
+			}
+			if (old)
+				wl_cursor_theme_destroy(old);
+			return;
+		}
+		if (t)
+			wl_cursor_theme_destroy(t);
+	}
+	cursor_show();
 }
 
 /* Sharp on a scaled output: wl_compositor 6 says which scale the output it is on
@@ -1488,8 +1497,7 @@ static void surf_preferred_scale(void *data, struct wl_surface *s, int32_t facto
 	buf_scale = factor;
 	dirty = 1;
 	/* Not only at the next enter: the pointer may stay on the window. */
-	cursor_load();
-	cursor_set();
+	cursor_update();
 }
 
 static void surf_preferred_transform(void *data, struct wl_surface *s,
@@ -1584,7 +1592,7 @@ int main(int argc, char **argv)
 			"wl_shm or xdg_wm_base\n");
 		return 1;
 	}
-	cursor_load();
+	cursor_update();
 	theme_init();
 	setup_window();
 	wl_surface_commit(surface);
