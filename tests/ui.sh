@@ -42,7 +42,11 @@ want="pulseControl $(sed -n 's/.*_VERSION "\(.*\)"/\1/p' "$SC_DIR/version.h")"
 [ "$("$SC" -v)" = "$want" ] || fail "-v prints '$("$SC" -v)', not '$want'"
 echo "ok: -v prints the version"
 "$SC" -h 2>/dev/null || fail "-h is a usage error"
-echo "ok: -h prints the usage"
+"$SC" -h 2>/dev/null | grep -q '^usage:' || fail "-h prints no usage on stdout"
+echo "ok: -h prints the usage on stdout"
+[ -z "$("$SC" -x 2>/dev/null)" ] || fail "-x prints on stdout"
+"$SC" -x 2>&1 >/dev/null | grep -q '^usage:' || fail "-x prints no usage on stderr"
+echo "ok: a refused argument gets the usage on stderr"
 for args in --help -x "-v -v" "-h -x"; do
 	"$SC" $args >/dev/null 2>&1 && fail "'$args' is taken"
 done
@@ -835,6 +839,12 @@ echo "ok: with the pointer away no cursor buffer goes while shown"
 echo 'Mwm*HEADLESS-1*outputScale: 2' >"$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 check "the output is scaled by 2 again" "[ \"\$(global output_HEADLESS-1 scale)\" = 200 ]"
+sc_quit
+# Only a whole number is a size: "32x" is none, and gives the default 24, as 24 does.
+XCURSOR_SIZE=32x sc_start
+do_input move $((2 * (CX + W / 2))) $((2 * (CY + H / 2)))
+check "XCURSOR_SIZE=32x gives the default" \
+	"cursor_ok && [ \"\$(global cursor cw)\" = 48 ] && [ \"\$(global cursor cscale)\" = 2 ]"
 sc_quit
 # A size past any theme is the largest there is, not an overflow. Still at scale 2.
 XCURSOR_SIZE=1000000000 sc_start

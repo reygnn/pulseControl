@@ -1444,9 +1444,11 @@ static int cursor_show(void)
 static void cursor_update(void)
 {
 	if (cursor_scale != buf_scale) {
+		/* A whole number only: "32x" is none. */
 		const char *s = getenv("XCURSOR_SIZE");
-		long size = s ? strtol(s, NULL, 10) : 0;
-		if (size <= 0)
+		char *end = NULL;
+		long size = s ? strtol(s, &end, 10) : 0;
+		if (!s || end == s || *end || size <= 0)
 			size = 24;
 		/* No theme has more; and times the scale it must stay an int. */
 		size = MIN(size, 256);
@@ -1567,7 +1569,8 @@ int main(int argc, char **argv)
 	}
 	if (argc > 1) {
 		int help = argc == 2 && !strcmp(argv[1], "-h");
-		fprintf(stderr, "usage: pulseControl [-v]\n"
+		/* Asked for, it goes to stdout, as mwc's does. */
+		fprintf(help ? stdout : stderr, "usage: pulseControl [-v]\n"
 			"Environment: SC_FONT (default \"Sans 10\"), "
 			"MWC_INACTIVE, MWC_ACTIVE.\n");
 		return help ? 0 : 1;
