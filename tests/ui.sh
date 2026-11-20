@@ -26,7 +26,9 @@ export LC_ALL=C.UTF-8
 export HOME=$SMOKE_DIR/home XDG_CONFIG_HOME=$SMOKE_DIR/home/.config
 export PULSE_SERVER=unix:$SMOKE_DIR/pulse.sock
 export DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent
-unset MWC_INACTIVE MWC_ACTIVE SC_FONT PULSE_RUNTIME_PATH PULSE_STATE_PATH XCURSOR_PATH
+unset MWC_INACTIVE MWC_ACTIVE PULSE_RUNTIME_PATH PULSE_STATE_PATH XCURSOR_PATH
+# The font is fixed: a variable that once chose it must not change it.
+export SC_FONT="Sans 20"
 # The cursor checks count in Adwaita's sizes, whatever the developer uses.
 export XCURSOR_THEME=Adwaita
 mkdir -p "$HOME"
@@ -229,6 +231,11 @@ sc_start
 [ "$(get pulseControl bw)" = 0 ] && [ "$(get pulseControl th)" = 0 ] ||
 	fail "mwc decorates it: border $(get pulseControl bw), title $(get pulseControl th)"
 echo "ok: no server-side decoration"
+# DejaVu Sans 10 makes it 70 high, as high as the other dock tools.
+[ "$H" = 70 ] || fail "the window is $H high, not 70: the font is not DejaVu Sans 10"
+echo "ok: the font is DejaVu Sans 10, whatever SC_FONT says"
+grep -q 'not found' "$SC_LOG" && fail "it warns of a missing font: $(cat "$SC_LOG")"
+echo "ok: no warning with DejaVu Sans there"
 # Its frame: a bevel of 2, then a line of the face, active while it is the active window.
 pixel_is "the frame is in the active colour" $((WX + 2)) $((CY + ROW)) "$SEL"
 # Another window, in the far corner, takes the keyboard, and gives it back.
@@ -854,6 +861,24 @@ check "a huge XCURSOR_SIZE gives the largest cursor" \
 echo "cursor $(global cursor cw)x$(global cursor ch)@$(global cursor cscale)"
 sc_quit
 rm "$XDG_CONFIG_HOME/mwc/mwmrc"
+
+# Without DejaVu Sans fontconfig takes another font, and it says so.
+mkdir -p "$SMOKE_DIR/fonts"
+cp "$(fc-match -f '%{file}' 'DejaVu Sans Mono')" "$SMOKE_DIR/fonts/" || fail "no DejaVu Sans Mono"
+cat >"$SMOKE_DIR/fonts.conf" <<EOF
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<fontconfig>
+	<dir>$SMOKE_DIR/fonts</dir>
+	<cachedir>$SMOKE_DIR/fontcache</cachedir>
+</fontconfig>
+EOF
+: >"$SC_LOG"
+FONTCONFIG_FILE=$SMOKE_DIR/fonts.conf sc_start
+grep -q 'font DejaVu Sans not found' "$SC_LOG" ||
+	fail "no warning without DejaVu Sans: $(cat "$SC_LOG")"
+echo "ok: without DejaVu Sans it warns"
+sc_quit
 
 trap cleanup EXIT
 pa_stop

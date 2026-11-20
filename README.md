@@ -65,7 +65,6 @@ field. The balance between the channels is kept.
 
 | Variable | Default | |
 |---|---|---|
-| `SC_FONT` | `Sans 10` | Pango font name, e.g. `Sans Bold 11` |
 | `MWC_INACTIVE`, `MWC_ACTIVE` | `#aeb2c3`, `#7387ad` | background; fill, focused border |
 | `PULSE_SERVER` | | another sound server, as for every Pulse program |
 
@@ -73,6 +72,10 @@ Without the colour variables it reads `Mwm*background` and `Mwm*activeBackground
 `~/.config/mwc/mwmrc`, else the Motif defaults. The text takes `Mwm*foreground` and
 `Mwm*activeForeground` from there as mwc's titles do, else black or white, whichever
 reads better.
+
+The font is fixed as DejaVu Sans 10, the same in deskControl, pulseControl, osDisplay
+and digitalClock, so that the four are as high as each other in the dock. Without it
+pulseControl says which font fontconfig took instead.
 
 
 ## How this is built
