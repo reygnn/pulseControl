@@ -760,6 +760,15 @@ do_input click left
 kill -CONT "$SC_PID"
 sc_exits "q and a click in one batch"
 expect_mute "the click after q mutes nothing" first no
+# Nor does the wheel turned after q: nothing read after it reaches the server.
+sc_start
+kill -STOP "$SC_PID"
+do_input key q
+do_input move $((CX + S0 + 5)) $((CY + ROW))
+do_input wheel -1
+kill -CONT "$SC_PID"
+sc_exits "q and the wheel in one batch"
+expect_vol "the wheel after q changes nothing" first 40 40
 
 # ---- size --------------------------------------------------------------------
 

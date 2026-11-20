@@ -28,7 +28,6 @@
  */
 #define _GNU_SOURCE
 #include <cairo.h>
-#include <ctype.h>
 #include <errno.h>
 #include <limits.h>
 #include <linux/input-event-codes.h>
@@ -94,7 +93,8 @@ static pa_cvolume sink_shape;
  * acknowledged, or during a drag, is older than what the window shows, and
  * would make the slider jump back. */
 static int pending;
-/* Asked to go: the main loop ends after what the server was asked has gone. */
+/* Asked to go: the main loop ends after what the server was asked has gone, and
+ * nothing read after the quit asks it anything more. */
 static int quitting;
 
 static int dragging, drag_off, btn_pressed;
@@ -396,7 +396,7 @@ static void track(pa_operation *op)
  * failed sends nothing, and ctx_drop resets the window a moment later. */
 static void set_percent(int pct)
 {
-	if (sink_state != SINK_OK || pct == sink_pct)
+	if (sink_state != SINK_OK || pct == sink_pct || quitting)
 		return;
 	pa_cvolume cv = sink_shape;
 	pa_cvolume_scale(&cv, ((uint64_t)pct * PA_VOLUME_NORM + 50) / 100);
@@ -419,7 +419,7 @@ static void step_volume(int d)
 
 static void toggle_mute(void)
 {
-	if (sink_state != SINK_OK)
+	if (sink_state != SINK_OK || quitting)
 		return;
 	pa_operation *op = pa_context_set_sink_mute_by_index(ctx, sink_idx, !sink_mute,
 		set_done, NULL);
@@ -849,8 +849,6 @@ static void edit_key(xkb_keysym_t ks)
 
 static void key_action(xkb_keysym_t ks)
 {
-	if (quitting)
-		return;         /* a key after q in the same batch is not meant */
 	switch (ks) {       /* the keyboard's volume keys mean only that */
 	case XKB_KEY_XF86AudioRaiseVolume:
 		step_volume(STEP);
@@ -1046,7 +1044,7 @@ static void ptr_motion(void *data, struct wl_pointer *p, uint32_t time,
 static void ptr_button(void *data, struct wl_pointer *p, uint32_t serial,
 	uint32_t time, uint32_t code, uint32_t state)
 {
-	if (code != BTN_LEFT || !ptr_surface || quitting)
+	if (code != BTN_LEFT || !ptr_surface)
 		return;
 	if (state != WL_POINTER_BUTTON_STATE_PRESSED) {
 		end_drag();
@@ -1461,7 +1459,9 @@ static int poll_both(struct pollfd *ufds, unsigned long nfds, int timeout,
 	memcpy(fds, ufds, nfds * sizeof *fds);
 	fds[nfds] = (struct pollfd){ .fd = wl_display_get_fd(dpy),
 		.events = wl_events };
-	int ret = poll(fds, nfds + 1, timeout);
+	/* Going, only Pulse counts: a compositor that has hung up would wake the
+	 * poll at once, again and again. */
+	int ret = poll(fds, nfds + !quitting, timeout);
 	int saved = errno;
 	if (ret >= 0) {
 		for (unsigned long i = 0; i < nfds; i++)
@@ -1478,7 +1478,6 @@ static int poll_both(struct pollfd *ufds, unsigned long nfds, int timeout,
 static void quit(void)
 {
 	uint64_t end = now_ms() + 1000, now;
-	wl_events = 0;
 	while (ctx && pa_context_get_state(ctx) == PA_CONTEXT_READY &&
 	       pa_context_is_pending(ctx) && (now = now_ms()) < end) {
 		if (pa_mainloop_prepare(ml, (int)((end - now) * 1000)) < 0 ||

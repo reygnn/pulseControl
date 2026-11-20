@@ -1,6 +1,6 @@
 /* theme.h - the colours of pulseControl without Wayland: mwc's rules for the
  * bevels and the text, colour names, and the mwmrc. The same as digitalClock's,
- * plus readable(). test_theme checks them. */
+ * plus contrast_ratio(), readable() and palette(). test_theme checks them. */
 #ifndef THEME_H
 #define THEME_H
 
