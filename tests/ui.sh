@@ -179,10 +179,40 @@ sc_start() {
 	S0=$((6 + BARH + 4 + 1))
 	S1=$(scale_end)
 	ROW=$((6 + BARH / 2 + 2))
-	# Inside the volume field, right of its text and above it.
+	# Inside the volume field, right of its text and above it, and its left end and
+	# middle: the text is centred.
 	FIELD_X=$((W - 6 - 3))
 	FIELD_Y=$((6 + 3))
-	echo "window ${W}x$H, scale x $S0..$S1"
+	FIELD_L=$(field_left)
+	FIELD_M=$(((FIELD_L + FIELD_X) / 2))
+	echo "window ${W}x$H, scale x $S0..$S1, field x $FIELD_L..$FIELD_X"
+}
+
+# Where the inside of the volume field starts, in the window: along a row above the
+# text, as far left as the face at its right end goes. Any theme.
+field_left() {
+	local x y=$((CY + FIELD_Y)) shot=$SMOKE_DIR/f.png c
+	WAYLAND_DISPLAY=wayland-0 grim "$shot" 2>/dev/null || fail "no screenshot" >&2
+	c=$(build/pngtool pixel "$shot" $((CX + FIELD_X)) "$y")
+	for ((x = CX + FIELD_X; x > CX; x--)); do
+		[ "$(build/pngtool pixel "$shot" "$x" "$y")" = "$c" ] || break
+	done
+	echo $((x - CX + 1))
+}
+
+# field_has <description> <rrggbb>: that colour in the field's row above the text, as
+# a selection behind it is.
+field_has() {
+	local i
+	for ((i = 0; i < 30; i++)); do
+		WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null &&
+			[ "$(build/pngtool count "$SHOT" $((CX + FIELD_L)) $((CY + FIELD_Y)) \
+				$((FIELD_X - FIELD_L + 1)) 1 "$2" 0)" -gt 0 ] &&
+			{ echo "ok: $1"; return 0; }
+		sleep 0.1
+	done
+	cp "$SHOT" "$ERR_SHOT" 2>/dev/null
+	fail "$1: no $2 in the field"
 }
 
 # Where the inside of the scale ends, in the window. The volume field beside it depends
@@ -476,15 +506,15 @@ do_input key Return
 expect_vol "back at 50" first 50 50
 
 # The text on the active colour, a mid-tone: black reads better on it than white.
-# Counted in the right end of the selection, inside the field's paper, which is near
+# Counted in the middle of the selection, inside the field's paper, which is near
 # white itself.
 do_input move $((CX + FIELD_X)) $((CY + ROW))
 do_input click left
-wait_pixel "a click selects the volume" $((W - 13)) "$FIELD_Y" "$SEL"
+field_has "a click selects the volume" "$SEL"
 ink_ok=
 for ((i = 0; i < 30; i++)); do
 	if WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null; then
-		set -- $((CX + W - 23)) $((CY + 10)) 10 $((BARH - 8))
+		set -- $((CX + FIELD_M - 5)) $((CY + 10)) 10 $((BARH - 8))
 		black=$(build/pngtool count "$SHOT" "$@" 000000)
 		white=$(build/pngtool count "$SHOT" "$@" ffffff)
 		[ "$black" -gt 0 ] && [ "$white" = 0 ] && { ink_ok=1; break; }
@@ -501,12 +531,31 @@ wait_pixel "Esc closes the field" "$FIELD_X" "$FIELD_Y" c6c9d5
 # between 50 % and 11 %: counted once each, then 11 % set while the field is open.
 field_ink() {
 	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null &&
-		build/pngtool count "$SHOT" $((CX + W - 33)) $((CY + 10)) 20 $((BARH - 8)) 000000
+		build/pngtool count "$SHOT" $((CX + FIELD_L)) $((CY + 10)) \
+			$((FIELD_X - FIELD_L + 1)) $((BARH - 8)) 000000
+}
+# The first and last column of the field with ink in them, "l r", in the window.
+ink_span() {
+	local x l= r=
+	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null || fail "no screenshot"
+	for ((x = FIELD_L; x <= FIELD_X; x++)); do
+		[ "$(build/pngtool count "$SHOT" $((CX + x)) $((CY + 10)) 1 $((BARH - 8)) \
+			000000)" -gt 0 ] || continue
+		l=${l:-$x}
+		r=$x
+	done
+	echo "$l $r"
+}
+# span_ink <l> <r>: the ink between those columns.
+span_ink() {
+	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null || fail "no screenshot"
+	build/pngtool count "$SHOT" $((CX + $1)) $((CY + 10)) $(($2 - $1 + 1)) $((BARH - 8)) \
+		000000
 }
 open_field() {
 	do_input move $((CX + FIELD_X)) $((CY + ROW))
 	do_input click left
-	wait_pixel "$1" $((W - 13)) "$FIELD_Y" "$SEL"
+	field_has "$1" "$SEL"
 }
 field_shows() { # <ink>
 	local i
@@ -847,11 +896,11 @@ sc_start
 status_has "the text takes Mwm*foreground" 00ff00
 do_input move $((CX + FIELD_X)) $((CY + ROW))
 do_input click left
-wait_pixel "a click selects the volume" $((W - 13)) "$FIELD_Y" "$SEL"
+field_has "a click selects the volume" "$SEL"
 fg_ok=
 for ((i = 0; i < 30; i++)); do
 	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null &&
-		[ "$(build/pngtool count "$SHOT" $((CX + W - 23)) $((CY + 10)) 10 \
+		[ "$(build/pngtool count "$SHOT" $((CX + FIELD_M - 5)) $((CY + 10)) 10 \
 			$((BARH - 8)) ff00ff)" -gt 0 ] && { fg_ok=1; break; }
 	sleep 0.1
 done
@@ -868,6 +917,8 @@ MWC_INACTIVE='#505050' sc_start
 pactl set-sink-mute first 0
 check "the volume is shown on a mid grey" '[ "$(field_ink)" -gt 0 ]'
 ink_on=$(field_ink)
+span=$(ink_span)
+digits=$(span_ink $span)
 pactl set-sink-mute first 1
 muted_ok=
 for ((i = 0; i < 30; i++)); do
@@ -877,6 +928,10 @@ done
 [ -n "$muted_ok" ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
 	fail "on a mid grey a muted volume looks as an unmuted one (ink $ink_on)"; }
 echo "ok: on a mid grey a muted volume looks different"
+# The brackets go around the volume, which stays where it was: centred without them.
+[ "$(span_ink $span)" = "$digits" ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
+	fail "the volume moves when the brackets come: ink $(span_ink $span), not $digits, in x $span"; }
+echo "ok: the brackets don't move the volume (x $span)"
 pactl set-sink-mute first 0
 sc_quit
 

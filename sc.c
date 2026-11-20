@@ -677,7 +677,8 @@ static void paint(void)
 		if (edit_fresh)
 			snprintf(edit_buf, sizeof edit_buf, "%d", sink_pct);
 		snprintf(s, sizeof s, "%s %%", edit_buf);
-		int tw = textw(s), tpos = fx + fw - FIELD_PAD / 2 - tw;
+		/* Centred as the volume is when closed, so opening it moves nothing. */
+		int tw = textw(s), tpos = fx + (fw - tw) / 2;
 		if (edit_fresh) {
 			fill(pal.sel, tpos - 1, fy + 1, tw + 2, fh - 2);
 		} else {
@@ -687,10 +688,16 @@ static void paint(void)
 			fw, s);
 	} else if (ok) {
 		/* Muted in brackets, not dimmed: on a mid grey the field's text has
-		 * no room left to be dimmer and still read. */
-		snprintf(s, sizeof s, sink_mute ? "(%d %%)" : "%d %%", sink_pct);
-		text(pal.list_fg, fx + fw - FIELD_PAD / 2 - textw(s), r_pct.y, r_pct.h,
-			fw, s);
+		 * no room left to be dimmer and still read. The volume is centred
+		 * without them and the "(" put before it, so that it doesn't move
+		 * when they come. */
+		snprintf(s, sizeof s, "%d %%", sink_pct);
+		int x = fx + (fw - textw(s)) / 2;
+		if (sink_mute) {
+			snprintf(s, sizeof s, "(%d %%)", sink_pct);
+			x -= textw("(");
+		}
+		text(pal.list_fg, x, r_pct.y, r_pct.h, fw, s);
 	}
 
 	/* status line */
