@@ -37,7 +37,7 @@ In mwc, a place of its own or the dock, in `~/.config/mwc/mwmrc`:
 
 A mute button with a speaker, the scale, the volume in percent, and a status line with
 the name of the output. The scale fills in the active colour up to the slider; muted,
-it stays empty. Only mwm's thin border, in the active colour while pulseControl is the
+it stays empty, and the volume is shown in brackets. Only mwm's thin border, in the active colour while pulseControl is the
 active window. The colours are mwc's, see Configuration.
 
 It follows the default output and changes made by other programs. Without a sound
