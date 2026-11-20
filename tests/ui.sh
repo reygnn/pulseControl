@@ -99,6 +99,38 @@ expect_vol() { # <description> <sink> <percent ...>
 	fail "$what: $sink is at '$got', expected '$*'"
 }
 
+# rises_to <description> <sink> <percent>: the first channel gets there, within 3 s.
+rises_to() {
+	local i got
+	for ((i = 0; i < 60; i++)); do
+		got=$(vol_of "$2")
+		[ "${got%% *}" -ge "$3" ] && { echo "ok: $1 ($got)"; return 0; }
+		sleep 0.05
+	done
+	fail "$1: $2 is at '$got', not up to $3 %"
+}
+
+# stays <description> <sink> <percent>: once a step on its way has arrived, the volume
+# doesn't move for a second, longer than the 40 ms a repeating key takes for a step,
+# and is at most two steps above percent. Without that a repeat run on to 100 % would
+# pass, standing still there.
+stays() {
+	local i got before=
+	for ((i = 0; i < 20; i++)); do
+		got=$(vol_of "$2")
+		[ "$got" = "$before" ] && break
+		before=$got
+		sleep 0.1
+	done
+	for ((i = 0; i < 20; i++)); do
+		sleep 0.05
+		got=$(vol_of "$2")
+		[ "$got" = "$before" ] || fail "$1: $2 went on from '$before' to '$got'"
+	done
+	[ "${before%% *}" -le $(($3 + 10)) ] || fail "$1: $2 went on from $3 % to '$before'"
+	echo "ok: $1 ($before)"
+}
+
 # As expect_vol, within 1 %: a pixel of the scale need not be a whole percent.
 expect_near() { # <description> <sink> <percent ...>
 	local what=$1 sink=$2 i got ok v w
@@ -286,6 +318,34 @@ expect_vol "Right is louder" first 60 60
 do_input key Down
 do_input key Left
 expect_vol "Down and Left are quieter" first 50 50
+
+# A held key repeats at mwc's 600 ms and 25 a second, until it is let go or the
+# keyboard goes elsewhere. From 10 %, so that 100 % doesn't stop it instead.
+pactl set-sink-volume first 10%
+shows "at 10 before holding a key" 10
+do_input press Up
+rises_to "Up held repeats" first 30
+do_input lift Up
+at=$(vol_of first)
+stays "and stops when let go" first "${at%% *}"
+pactl set-sink-volume first 10%
+shows "at 10 again" 10
+do_input press Up
+rises_to "held again, it repeats" first 30
+WAYLAND_DISPLAY=wayland-0 "$MWC_DIR/build/layerc" keyboard=exclusive anchor=bottom,right \
+	>"$SMOKE_DIR/layer.log" 2>&1 &
+PID_layer=$!
+check "a layer surface takes the keyboard" "[ \"\$(get pulseControl kbfocus)\" = 0 ]"
+at=$(vol_of first)
+stays "the repeat ends with the keyboard, though the key is down" first "${at%% *}"
+kill "$PID_layer" 2>/dev/null
+wait "$PID_layer" 2>/dev/null
+check "the keyboard comes back" "[ \"\$(get pulseControl kbfocus)\" = 1 ]"
+at=$(vol_of first)
+do_input lift Up
+stays "and the key coming up later does nothing" first "${at%% *}"
+pactl set-sink-volume first 50%
+shows "back at 50" 50
 do_input key m
 expect_mute "m mutes" first yes
 wait_pixel "a muted scale has no fill" $((S0 + 2)) "$ROW" "$TROUGH"
