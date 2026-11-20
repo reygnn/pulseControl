@@ -752,7 +752,9 @@ kill -CONT "$SC_PID"
 sc_exits "a step and q in one batch"
 expect_vol "the step arrives before the end" first 40 40
 # And a click after q in the same batch is not meant: the speaker stays as it is.
+# Shown first: without its sink nothing would be sent anyway, and the check be empty.
 sc_start
+shows "at 40 before quitting" 40
 kill -STOP "$SC_PID"
 do_input key q
 do_input move $((CX + 6 + BARH / 2)) $((CY + 6 + BARH / 2))
@@ -762,6 +764,7 @@ sc_exits "q and a click in one batch"
 expect_mute "the click after q mutes nothing" first no
 # Nor does the wheel turned after q: nothing read after it reaches the server.
 sc_start
+shows "at 40 again before quitting" 40
 kill -STOP "$SC_PID"
 do_input key q
 do_input move $((CX + S0 + 5)) $((CY + ROW))
@@ -858,6 +861,24 @@ echo "ok: the selected volume takes Mwm*activeForeground"
 do_input key Escape
 sc_quit
 rm "$XDG_CONFIG_HOME/mwc/mwmrc"
+
+# On a mid grey the volume's text has no room to be dimmer and still read: muted, it is
+# in brackets instead, which the ink at the field's right end shows.
+MWC_INACTIVE='#505050' sc_start
+pactl set-sink-mute first 0
+check "the volume is shown on a mid grey" '[ "$(field_ink)" -gt 0 ]'
+ink_on=$(field_ink)
+pactl set-sink-mute first 1
+muted_ok=
+for ((i = 0; i < 30; i++)); do
+	[ "$(field_ink)" != "$ink_on" ] && { muted_ok=1; break; }
+	sleep 0.1
+done
+[ -n "$muted_ok" ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
+	fail "on a mid grey a muted volume looks as an unmuted one (ink $ink_on)"; }
+echo "ok: on a mid grey a muted volume looks different"
+pactl set-sink-mute first 0
+sc_quit
 
 # An error stays readable on a dark background. No server here.
 MWC_INACTIVE='#202020' PULSE_SERVER=unix:$SMOKE_DIR/none sc_start

@@ -34,7 +34,7 @@ struct palette {
 	uint32_t trough, sel;           /* the scale: empty and filled */
 	uint32_t list, paper;           /* the volume field, and while typing */
 	uint32_t fg, dim, err;          /* text on bg: normal, dimmed, error */
-	uint32_t list_fg, list_dim;     /* text on list: normal, muted */
+	uint32_t list_fg;               /* text on list */
 	uint32_t sel_fg;                /* text on sel */
 };
 

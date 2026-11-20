@@ -93,7 +93,6 @@ void palette(struct palette *p, uint32_t bg, uint32_t sel, const uint32_t *fg,
 	/* The field is lighter than bg: white text that reads on a mid grey need
 	 * not read there. */
 	p->list_fg = readable(p->list, p->fg, contrast(p->list));
-	p->list_dim = dimmed(p->list, p->list_fg);
 	p->sel_fg = sel_fg ? *sel_fg : contrast(sel);
 }
 

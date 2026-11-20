@@ -367,7 +367,9 @@ static void sink_info(pa_context *c, const pa_sink_info *i, int eol, void *u)
 /* Ask for the default sink, whichever that is by now. */
 static void refresh(void)
 {
-	if (!ctx || pa_context_get_state(ctx) != PA_CONTEXT_READY)
+	/* Going, the window is about to go too: an answer would only keep quit()
+	 * waiting, as long as another program goes on changing the sink. */
+	if (!ctx || pa_context_get_state(ctx) != PA_CONTEXT_READY || quitting)
 		return;
 	pa_operation *op = pa_context_get_sink_info_by_name(ctx, "@DEFAULT_SINK@",
 		sink_info, NULL);
@@ -566,10 +568,11 @@ static void text(uint32_t c, int x, int y, int h, int maxw, const char *s)
 static void layout(void)
 {
 	char s[32];
-	int pw = textw("100 %");
+	/* Room for a muted volume, in brackets. */
+	int pw = textw("(100 %)");
 	/* Only something unusual is wider, such as a volume of 1500 %. */
 	if (sink_state == SINK_OK) {
-		snprintf(s, sizeof s, "%d %%", sink_pct);
+		snprintf(s, sizeof s, "(%d %%)", sink_pct);
 		pw = MAX(pw, textw(s));
 	}
 	pw += 2 * BEV + FIELD_PAD;
@@ -683,10 +686,11 @@ static void paint(void)
 		text(edit_fresh ? pal.sel_fg : 0x000000, tpos, r_pct.y, r_pct.h,
 			fw, s);
 	} else if (ok) {
-		snprintf(s, sizeof s, "%d %%", sink_pct);
-		text(sink_mute ? pal.list_dim : pal.list_fg,
-			fx + fw - FIELD_PAD / 2 - textw(s),
-			r_pct.y, r_pct.h, fw, s);
+		/* Muted in brackets, not dimmed: on a mid grey the field's text has
+		 * no room left to be dimmer and still read. */
+		snprintf(s, sizeof s, sink_mute ? "(%d %%)" : "%d %%", sink_pct);
+		text(pal.list_fg, fx + fw - FIELD_PAD / 2 - textw(s), r_pct.y, r_pct.h,
+			fw, s);
 	}
 
 	/* status line */
@@ -1434,7 +1438,7 @@ static void setup_window(void)
 	xdg_toplevel_set_app_id(toplevel, "pulseControl");
 	xdg_toplevel_set_title(toplevel, "pulseControl");
 	/* Room for all of it with the font in use, and a pixel per percent. */
-	min_w = MAX(220, 2 * (FRAME + PAD) + barh + textw("100 %") + 2 * BEV + FIELD_PAD + 12 +
+	min_w = MAX(220, 2 * (FRAME + PAD) + barh + textw("(100 %)") + 2 * BEV + FIELD_PAD + 12 +
 		2 * BEV + THUMB + 100);
 	float_w = W = MAX(float_w, min_w);
 	xdg_toplevel_set_min_size(toplevel, min_w, min_h);

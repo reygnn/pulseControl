@@ -66,7 +66,7 @@ static void check_palette(uint32_t bg)
 	struct { uint32_t face, text; const char *what; } pair[] = {
 		{ p.bg, p.fg, "text" }, { p.bg, p.dim, "dimmed text" },
 		{ p.bg, p.err, "error" }, { p.list, p.list_fg, "volume" },
-		{ p.list, p.list_dim, "muted volume" }, { p.sel, p.sel_fg, "selection" },
+		{ p.sel, p.sel_fg, "selection" },
 	};
 	for (size_t i = 0; i < sizeof pair / sizeof pair[0]; i++) {
 		checks++;
