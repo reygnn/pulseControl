@@ -94,6 +94,8 @@ static pa_cvolume sink_shape;
  * acknowledged, or during a drag, is older than what the window shows, and
  * would make the slider jump back. */
 static int pending;
+/* Asked to go: the main loop ends after what the server was asked has gone. */
+static int quitting;
 
 static int dragging, drag_off, btn_pressed;
 /* Typing the volume. Fresh: what is shown goes at the first digit. */
@@ -847,6 +849,8 @@ static void edit_key(xkb_keysym_t ks)
 
 static void key_action(xkb_keysym_t ks)
 {
+	if (quitting)
+		return;         /* a key after q in the same batch is not meant */
 	switch (ks) {       /* the keyboard's volume keys mean only that */
 	case XKB_KEY_XF86AudioRaiseVolume:
 		step_volume(STEP);
@@ -861,8 +865,10 @@ static void key_action(xkb_keysym_t ks)
 	if (mod_on(XKB_MOD_NAME_CTRL) && !mod_on(XKB_MOD_NAME_ALT) &&
 	    !mod_on(XKB_MOD_NAME_LOGO) &&
 	    (ks == XKB_KEY_q || ks == XKB_KEY_Q || ks == XKB_KEY_w ||
-	     ks == XKB_KEY_W))
-		exit(0);
+	     ks == XKB_KEY_W)) {
+		quitting = 1;
+		return;
+	}
 	if (!plain_key())
 		return;
 	if (editing) {
@@ -890,7 +896,8 @@ static void key_action(xkb_keysym_t ks)
 		toggle_mute();
 		break;
 	case XKB_KEY_q: case XKB_KEY_Q: case XKB_KEY_Escape:
-		exit(0);
+		quitting = 1;
+		break;
 	}
 }
 
@@ -1039,7 +1046,7 @@ static void ptr_motion(void *data, struct wl_pointer *p, uint32_t time,
 static void ptr_button(void *data, struct wl_pointer *p, uint32_t serial,
 	uint32_t time, uint32_t code, uint32_t state)
 {
-	if (code != BTN_LEFT || !ptr_surface)
+	if (code != BTN_LEFT || !ptr_surface || quitting)
 		return;
 	if (state != WL_POINTER_BUTTON_STATE_PRESSED) {
 		end_drag();
@@ -1284,7 +1291,7 @@ static void top_configure(void *data, struct xdg_toplevel *t, int32_t w,
 
 static void top_close(void *data, struct xdg_toplevel *t)
 {
-	exit(0);
+	quitting = 1;
 }
 
 static const struct xdg_toplevel_listener toplevel_listener = {
@@ -1465,6 +1472,23 @@ static int poll_both(struct pollfd *ufds, unsigned long nfds, int timeout,
 	return ret;
 }
 
+/* A step and a quit read in one batch of events: the step is only queued in
+ * libpulse, and written in the next dispatch. Before going, that and its answer
+ * are waited for, a second at most. */
+static void quit(void)
+{
+	uint64_t end = now_ms() + 1000, now;
+	wl_events = 0;
+	while (ctx && pa_context_get_state(ctx) == PA_CONTEXT_READY &&
+	       pa_context_is_pending(ctx) && (now = now_ms()) < end) {
+		if (pa_mainloop_prepare(ml, (int)((end - now) * 1000)) < 0 ||
+		    (pa_mainloop_poll(ml) < 0 && errno != EINTR) ||
+		    pa_mainloop_dispatch(ml) < 0)
+			break;
+	}
+	exit(0);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc > 1) {
@@ -1518,6 +1542,8 @@ int main(int argc, char **argv)
 	for (;;) {
 		if (wl_display_dispatch_pending(dpy) < 0)
 			lost_connection();
+		if (quitting)
+			quit();
 		uint64_t now = now_ms();
 		if (!ctx && now >= retry_at)
 			ctx_start();

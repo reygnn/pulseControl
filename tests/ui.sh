@@ -741,6 +741,25 @@ for combo in Escape q ctrl+q ctrl+w; do
 	check "$combo closes the window" '[ -z "$(get pulseControl w)" ]'
 	[ "$combo" = ctrl+w ] || sc_start
 done
+# A step and a quit read in one batch: the step reaches the server before pulseControl
+# goes. Stopped, it finds both waiting when it goes on.
+sc_start
+shows "at 35 before quitting" 35
+kill -STOP "$SC_PID"
+do_input key Up
+do_input key q
+kill -CONT "$SC_PID"
+sc_exits "a step and q in one batch"
+expect_vol "the step arrives before the end" first 40 40
+# And a click after q in the same batch is not meant: the speaker stays as it is.
+sc_start
+kill -STOP "$SC_PID"
+do_input key q
+do_input move $((CX + 6 + BARH / 2)) $((CY + 6 + BARH / 2))
+do_input click left
+kill -CONT "$SC_PID"
+sc_exits "q and a click in one batch"
+expect_mute "the click after q mutes nothing" first no
 
 # ---- size --------------------------------------------------------------------
 

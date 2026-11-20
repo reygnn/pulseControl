@@ -31,10 +31,15 @@ It draws at the integer scale the compositor asks for with wl_compositor 6. A
 fractional scale is drawn at the next integer and scaled down by the compositor; an
 older compositor never asks, and there the window stays at scale 1 and is blurred.
 
-The cursor is the theme's nearest size to `XCURSOR_SIZE` times the scale. When the
-scale doesn't divide that image, wp_viewporter shows it at its size over the scale.
-A compositor without wp_viewporter gets it at the largest scale that divides the
-image, so it can come out larger than `XCURSOR_SIZE` and less sharp.
+The scale is at most 16, as in digitalClock: a compositor asking for more gets the
+window at 16 and scales it up. A very large window gets a lower scale still, so that
+its buffer fits an int32 pool and cairo's 32767 pixels a side.
+
+The cursor is the theme's nearest size to `XCURSOR_SIZE` times the scale;
+`XCURSOR_SIZE` counts up to 256, more than themes have. When the scale doesn't divide
+that image, wp_viewporter shows it at its size over the scale. A compositor without
+wp_viewporter gets it at the largest scale that divides the image, so it can come out
+larger than `XCURSOR_SIZE` and less sharp.
 
 
 ## Input
