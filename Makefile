@@ -8,7 +8,7 @@ WAYLAND_PROTOCOLS := $(shell $(PKG_CONFIG) --variable=pkgdatadir wayland-protoco
 WAYLAND_SCANNER := $(shell $(PKG_CONFIG) --variable=wayland_scanner wayland-scanner 2>/dev/null)
 # Said plainly, rather than as a missing /stable/xdg-shell/xdg-shell.xml; but not to
 # `make clean`, which needs neither.
-ifneq ($(filter-out clean uninstall check build/test_seats,$(or $(MAKECMDGOALS),all)),)
+ifneq ($(filter-out clean uninstall check build/test_theme build/test_util,$(or $(MAKECMDGOALS),all)),)
 ifeq ($(WAYLAND_PROTOCOLS),)
 $(error pkg-config finds no wayland-protocols)
 endif
@@ -29,8 +29,8 @@ SC_CFLAGS = -std=c11 -Wall -Wextra -Wno-unused-parameter -Ibuild \
 	$(shell $(PKG_CONFIG) --cflags $(PKGS))
 SC_LIBS = $(shell $(PKG_CONFIG) --libs $(PKGS)) -lm
 
-MODS = seats.c
-MODS_H = seats.h
+MODS = theme.c util.c
+MODS_H = theme.h util.h
 
 all: pulseControl
 
@@ -41,10 +41,14 @@ pulseControl: sc.c $(MODS) $(MODS_H) version.h $(PROTO_H) $(PROTO_C)
 # The modules without Wayland, each under ASan and UBSan.
 UNIT_CFLAGS = -std=c11 -Wall -Wextra -g -O1 -fsanitize=address,undefined \
 	-fno-sanitize-recover=all
-UNITS = build/test_seats
+UNITS = build/test_theme build/test_util
 
-build/test_seats: tests/test_seats.c seats.c seats.h | build
-	$(CC) $(UNIT_CFLAGS) -I. -o $@ tests/test_seats.c seats.c
+build/test_util: tests/test_util.c util.c util.h | build
+	$(CC) $(UNIT_CFLAGS) -I. -o $@ tests/test_util.c util.c
+
+build/test_theme: tests/test_theme.c theme.c theme.h | build
+	$(CC) $(UNIT_CFLAGS) -I. $(shell $(PKG_CONFIG) --cflags pango) -o $@ \
+		tests/test_theme.c theme.c $(shell $(PKG_CONFIG) --libs pango) -lm
 
 check: $(UNITS)
 	@for t in $(UNITS); do echo "$$t"; ./$$t || exit 1; done

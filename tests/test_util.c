@@ -1,12 +1,29 @@
-/* test_seats.c - the list of announced seats: make check */
+/* test_util.c - the buffer's scale and the list of announced seats: make check */
 #include <stdio.h>
 
-#include "seats.h"
+#include "util.h"
 
 static int failures, checks;
 
 #define CHECK(c) do { checks++; if (!(c)) { failures++; \
 	fprintf(stderr, "%s:%d: FAIL: %s\n", __FILE__, __LINE__, #c); } } while (0)
+
+static void test_draw_scale(void)
+{
+	CHECK(draw_scale(314, 70, 1) == 1);
+	CHECK(draw_scale(314, 70, 4) == 4);
+	CHECK(draw_scale(314, 70, 16) == 16);
+	CHECK(draw_scale(314, 70, 0) == 1);
+	/* cairo's side limit: 8192 at 4 is 32768 wide, so 3 (review 2026-11-20, F3) */
+	CHECK(draw_scale(8192, 70, 4) == 3);
+	CHECK(draw_scale(70, 8192, 4) == 3);
+	CHECK(draw_scale(2048, 70, 16) == 15);
+	CHECK(draw_scale(2047, 70, 16) == 16);
+	/* the pool's int32 alone: 8000 x 8000 x 4 bytes at 3 is 2.3e9, its sides fit */
+	CHECK(draw_scale(8000, 8000, 3) == 2);
+	CHECK(draw_scale(8192, 8192, 4) == 2);
+	CHECK(draw_scale(2000, 2000, 4) == 4);
+}
 
 static int next_is(const struct seats *s, unsigned name, unsigned ver)
 {
@@ -58,7 +75,8 @@ static void test_seats(void)
 
 int main(void)
 {
+	test_draw_scale();
 	test_seats();
-	printf("test_seats: %d/%d\n", checks - failures, checks);
+	printf("test_util: %d/%d\n", checks - failures, checks);
 	return failures != 0;
 }

@@ -4,9 +4,10 @@
 # in screenshots. It has its own sockets, and touches neither a running session nor
 # the volume of the real sound card.
 #
-# Needs a built mwc with build/vinput, build/pngtool and build/xdgc in MWC_DIR (by default
-# ../mwc), grim, pactl and pulseaudio (PA_MODULES names its module directory,
-# if it isn't in the usual place). Output goes to build/ui.log, pulseControl's own to build/ui-pulseControl.log.
+# Needs a built mwc with build/vinput, build/pngtool, build/xdgc and build/layerc in
+# MWC_DIR (by default ../mwc), grim, pactl and pulseaudio (PA_MODULES names its module
+# directory, if it isn't in the usual place). Output goes to build/ui.log, pulseControl's
+# own to build/ui-pulseControl.log.
 SC_DIR=$(cd "$(dirname "$0")/.." && pwd)
 SC=${SC:-$SC_DIR/pulseControl}
 LOG=$SC_DIR/build/ui.log
@@ -190,14 +191,15 @@ sc_quit() {
 	check "q closes the window" '[ -z "$(get pulseControl w)" ]'
 }
 
-# status_has <description> <rrggbb>: text in that colour in the status line, for
-# which any pixel fully inside a stroke will do.
+# status_has <description> <rrggbb> [tol]: text in that colour in the status line, for
+# which any pixel fully inside a stroke will do; each channel off by at most tol, 0 if
+# not given.
 status_has() {
 	local i shot=$SMOKE_DIR/s.png
 	for ((i = 0; i < 30; i++)); do
 		WAYLAND_DISPLAY=wayland-0 grim "$shot" 2>/dev/null || fail "no screenshot"
 		[ "$(build/pngtool count "$shot" $((CX + 12)) $((CY + H - 6 - BARH + 4)) \
-			98 $((BARH - 8)) "$2" 0)" -gt 0 ] && { echo "ok: $1"; return 0; }
+			98 $((BARH - 8)) "$2" "${3:-0}")" -gt 0 ] && { echo "ok: $1"; return 0; }
 		sleep 0.1
 	done
 	fail "$1: no $2 in the status line"
@@ -354,10 +356,14 @@ do_input key BackSpace
 do_input key Return
 expect_vol "Backspace takes a digit" first 6 6
 
+# A leading zero takes no place: with it 0100 would be 010, which is 10.
+for k in 0 1 0 0; do do_input key "$k"; done
+do_input key Return
+expect_vol "a leading zero is replaced" first 100 100
 do_input key 0
 do_input key 5
 do_input key Return
-expect_vol "a leading zero is replaced" first 5 5
+expect_vol "and so is a lone one" first 5 5
 
 do_input move $((CX + FIELD_X)) $((CY + ROW))
 do_input click left
@@ -372,12 +378,17 @@ do_input key 3
 do_input key Return
 expect_vol "typing after the click sets it" first 33 33
 
+# Closed by a click on the status line, which sets nothing itself. A step after it
+# counts from 33, not from a 9 the click might have taken.
 do_input click left
 do_input key 9
-do_input move $((CX + $(thumb_mid 33))) $((CY + ROW))
+do_input move $((CX + 20)) $((CY + H - 10))
 do_input click left
 wait_pixel "a click beside the field closes it" "$FIELD_X" "$FIELD_Y" c6c9d5
-expect_vol "and takes nothing" first 33 33
+do_input key Up
+expect_vol "and takes nothing" first 38 38
+do_input key Down
+expect_vol "back at 33" first 33 33
 
 do_input key 0
 do_input key Return
@@ -488,6 +499,14 @@ do_input click left
 expect_mute "sliding off the speaker cancels the click, a click after it mutes" first yes
 do_input click left
 expect_mute "unmuted" first no
+# Off and back before the release, as a Motif push button: it counts.
+do_input down left
+do_input move $((CX + $(thumb_mid 45))) $((CY + ROW))
+do_input move "$BX" $((CY + 6 + BARH / 2))
+do_input up left
+expect_mute "off the speaker and back, the release mutes" first yes
+do_input click left
+expect_mute "unmuted again" first no
 
 # A click beside the slider puts it there; 75 % is well away from 45 %.
 do_input move $((CX + $(thumb_mid 75))) $((CY + ROW))
@@ -595,6 +614,17 @@ expect_vol "and not to the old one" first 45 45
 pactl set-default-sink first
 shows "the old default is back" 45
 
+# A right-to-left name starts at the left of the status line, as any other.
+RTL=$(pactl load-module module-null-sink sink_name=rtl \
+	sink_properties=device.description=שלום)
+pactl set-sink-volume rtl 20%
+pactl set-default-sink rtl
+shows "a sink with a right-to-left name" 20
+status_has "its name is at the left" 000000 32    # thin strokes, never quite black
+pactl set-default-sink first
+pactl unload-module "$RTL"
+shows "the old default is back again" 45
+
 # ---- no output at all --------------------------------------------------------
 
 pactl unload-module module-null-sink
@@ -697,7 +727,7 @@ sc_quit
 # setting is one, however many blanks it has.
 {
 	echo 'Mwm*activeBackground: #ff0000'
-	printf '!%0510d' 0 | tr 0 x     # fgets reads 511 at once
+	printf '!%0510d' 0 | tr 0 x     # make check tests other lengths
 	echo 'Mwm*activeBackground: #00ff00'
 } >"$XDG_CONFIG_HOME/mwc/mwmrc"
 sc_start
@@ -784,6 +814,24 @@ cursor_dest() {
 	grep -o 'wp_viewport#[0-9]*\.set_destination(-\?[0-9]*, -\?[0-9]*)' "$SC_LOG" |
 		tail -1 | sed 's/.*(\(.*\), \(.*\))/\1 \2/'
 }
+# Cursor buffers destroyed since line $1 of the log: those of a theme that went. Window
+# buffers don't count; an id the window takes up later is not the cursor's any more.
+cursor_gone() {
+	awk -v from="$1" '
+	match($0, /wl_pointer#[0-9]+\.set_cursor\([0-9]+, wl_surface#[0-9]+/) {
+		split(substr($0, RSTART, RLENGTH), f, /[#(, ]+/); cur = f[5]
+	}
+	match($0, /wl_surface#[0-9]+\.attach\(wl_buffer#[0-9]+/) {
+		split(substr($0, RSTART, RLENGTH), f, /[#.()]+/)
+		if (f[2] == cur) cb[f[5]] = 1
+	}
+	match($0, /wl_buffer#[0-9]+\.destroy\(\)/) {
+		split(substr($0, RSTART, RLENGTH), f, /[#.()]+/)
+		if (cb[f[2]] && NR >= from) n++
+		delete cb[f[2]]
+	}
+	END { print n + 0 }' "$SC_LOG"
+}
 # Buffers destroyed while the cursor surface still showed them: a theme gone too early.
 cursor_kept() {
 	awk '
@@ -842,12 +890,11 @@ echo "ok: and the cursor is never empty"
 # before that goes.
 do_input move 1279 719
 check "the pointer leaves the window" "grep -q 'wl_pointer#[0-9]*\.leave(' \"$SC_LOG\""
-GONE=$(grep -c 'wl_buffer#[0-9]*\.destroy()' "$SC_LOG")
+FROM=$(($(wc -l <"$SC_LOG") + 1))
 echo 'Mwm*HEADLESS-1*outputScale: 4' >"$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 check "the output is scaled by 4 again" "[ \"\$(global output_HEADLESS-1 scale)\" = 400 ]"
-check "the old theme is gone" \
-	"[ \"\$(grep -c 'wl_buffer#[0-9]*\.destroy()' \"$SC_LOG\")\" -gt $GONE ]"
+check "the old theme is gone" "[ \"\$(cursor_gone $FROM)\" -gt 0 ]"
 [ -z "$(cursor_kept)" ] || fail "with the pointer away, the cursor showed destroyed buffers"
 echo "ok: with the pointer away no cursor buffer goes while shown"
 echo 'Mwm*HEADLESS-1*outputScale: 2' >"$XDG_CONFIG_HOME/mwc/mwmrc"
@@ -871,7 +918,10 @@ rm "$XDG_CONFIG_HOME/mwc/mwmrc"
 
 # Without DejaVu Sans fontconfig takes another font, and it says so.
 mkdir -p "$SMOKE_DIR/fonts"
-cp "$(fc-match -f '%{file}' 'DejaVu Sans Mono')" "$SMOKE_DIR/fonts/" || fail "no DejaVu Sans Mono"
+# fc-match always names some font: it must be Mono, not DejaVu Sans itself.
+mono=$(fc-match -f '%{family[0]}|%{file}' 'DejaVu Sans Mono')
+[ "${mono%%|*}" = "DejaVu Sans Mono" ] || fail "no DejaVu Sans Mono, fc-match gives $mono"
+cp "${mono#*|}" "$SMOKE_DIR/fonts/" || fail "cannot copy ${mono#*|}"
 cat >"$SMOKE_DIR/fonts.conf" <<EOF
 <?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">

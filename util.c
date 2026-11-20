@@ -1,5 +1,15 @@
-/* seats.c - the announced seats; see seats.h. */
-#include "seats.h"
+/* util.c - small pieces of sc.c without Wayland; see util.h. */
+#include <stdint.h>
+
+#include "util.h"
+
+int draw_scale(int w, int h, int sc)
+{
+	while (sc > 1 && ((int64_t)w * sc * 4 * h * sc > INT32_MAX || (int64_t)w * sc > 32767 ||
+			  (int64_t)h * sc > 32767))
+		sc--;
+	return sc < 1 ? 1 : sc;
+}
 
 int seats_add(struct seats *s, unsigned name, unsigned ver)
 {

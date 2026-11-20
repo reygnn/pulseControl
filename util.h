@@ -1,7 +1,13 @@
-/* seats.h - the seats the compositor has announced, without Wayland, so that
- * test_seats can check the list. The same as digitalClock's in util.h. */
-#ifndef SEATS_H
-#define SEATS_H
+/* util.h - small pieces of sc.c without Wayland: the buffer's scale and the seats
+ * the compositor has announced. test_util checks them. The seats are the same as
+ * digitalClock's. */
+#ifndef UTIL_H
+#define UTIL_H
+
+/* The scale to draw a w x h window at, asked for sc: lower while the buffer would
+ * not fit, its pool's size being an int32 and cairo's image side at most 32767
+ * pixels. At least 1. */
+int draw_scale(int w, int h, int sc);
 
 /* The seats the compositor has announced and not removed, oldest first, by their
  * name in the registry and version: one is bound, the others wait for it to go. */

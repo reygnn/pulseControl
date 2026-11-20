@@ -89,14 +89,19 @@ CAVEATS.
 
 ## Testing
 
+    make check
+
+tests the parts without Wayland: the colours, the mwmrc, the seats and the buffer's
+scale, under ASan and UBSan.
+
     make test
 
 runs pulseControl in a headless mwc with simulated mouse and keyboard, against a
 private PulseAudio server with two null sinks, and checks the keys, the mouse, typing,
 what other programs change, a lost and returning server, the border and focus, and the
 colours. The real sound card is left alone. It needs a built mwc with `build/vinput`,
-`build/pngtool` and `build/xdgc` in `MWC_DIR` (by default `../mwc`), grim,
-pactl and pulseaudio; `PA_MODULES` names the module directory if it is elsewhere.
+`build/pngtool`, `build/xdgc` and `build/layerc` in `MWC_DIR` (by default `../mwc`),
+grim, pactl and pulseaudio; `PA_MODULES` names the module directory if it is elsewhere.
 
 On a host with `pipewire-pulse`, apt would remove `pipewire-alsa` for `pulseaudio`, so
 the test belongs in mwc's development box:

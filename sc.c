@@ -2,7 +2,7 @@
  * pulseControl - a minimal volume control for PulseAudio on Wayland, in the Motif look
  * of mwc (https://github.com/reygnn/mwc) and mfm.
  *
- * libpulse, libwayland, xkbcommon, Pango and Cairo, one file, no toolkit. It
+ * libpulse, libwayland, xkbcommon, Pango and Cairo, no toolkit. It
  * controls the default output and follows it when it changes, or when something
  * else changes its volume. It reads the same colours as mwc: MWC_INACTIVE /
  * MWC_ACTIVE from the environment, else Mwm*background and Mwm*activeBackground
@@ -50,7 +50,8 @@
 #include <wayland-cursor.h>
 #include <xkbcommon/xkbcommon.h>
 
-#include "seats.h"
+#include "theme.h"
+#include "util.h"
 #include "version.h"
 #include <xkbcommon/xkbcommon-keysyms.h>
 
@@ -159,8 +160,7 @@ static int repeat_rate = 25, repeat_delay = 600;
 
 static int W = 320, H, float_w = 320, float_h, min_w, min_h;
 static int activated;           /* the active window: the active frame */
-static uint32_t px_bg, px_top, px_bot, px_trough, px_sel, px_list, px_paper;
-static uint32_t xc_fg, xc_dim, xc_err, xc_sel_fg;
+static struct palette pal;
 static cairo_t *cr;             /* what fill, bevel and text draw on */
 static PangoLayout *plo;
 static int font_asc, font_desc;
@@ -257,137 +257,6 @@ static void frame_done(void *data, struct wl_callback *cb, uint32_t time)
 
 static const struct wl_callback_listener frame_listener = { frame_done };
 
-/* ---- colours (same rules as mwm's draw.c) ------------------------------- */
-
-static uint32_t mix(uint32_t rgb, uint32_t to, float f)
-{
-	uint32_t out = 0;
-	for (int sh = 0; sh <= 16; sh += 8) {
-		float c = (rgb >> sh) & 0xff, t = (to >> sh) & 0xff;
-		out |= (uint32_t)(c + (t - c) * f + 0.5f) << sh;
-	}
-	return out;
-}
-
-/* An sRGB channel as linear light. */
-static float linear(unsigned c)
-{
-	float v = c / 255.0f;
-	return v <= 0.04045f ? v / 12.92f : powf((v + 0.055f) / 1.055f, 2.4f);
-}
-
-/* Black or white, whichever has the higher WCAG contrast on bg. The two are equal
- * at a relative luminance of sqrt(1.05 * 0.05) - 0.05, a grey of about 0x76: a
- * mid-tone such as mwc's activeBackground gets black. */
-static float luminance(uint32_t c)
-{
-	return 0.2126f * linear((c >> 16) & 0xff) + 0.7152f * linear((c >> 8) & 0xff) +
-		0.0722f * linear(c & 0xff);
-}
-
-static uint32_t contrast(uint32_t bg)
-{
-	float l = luminance(bg);
-	return (l + 0.05f) * (l + 0.05f) > 1.05f * 0.05f ? 0x000000 : 0xffffff;
-}
-
-/* Dimmed towards fg, but no further than WCAG AA's 4.5:1 for small text allows; fg
- * itself if even that falls short. The same steps as digitalClock, so the two match. */
-static uint32_t dimmed(uint32_t bg, uint32_t fg)
-{
-	float lb = luminance(bg) + 0.05f;
-	for (int k = 12; k < 20; k++) {
-		uint32_t c = mix(bg, fg, k / 20.0f);
-		float lc = luminance(c) + 0.05f;
-		if ((lb > lc ? lb / lc : lc / lb) >= 4.5f)
-			return c;
-	}
-	return fg;
-}
-
-/* What mwc reads: "#rrggbb", names like "gold", and rgb:r/g/b with 1 to 4 hex
- * digits per channel. */
-static int parse_color(const char *s, uint32_t *out)
-{
-	PangoColor c;
-	if (!s || !*s)
-		return 0;
-	if (!strncasecmp(s, "rgb:", 4)) {
-		uint32_t rgb = 0;
-		s += 4;
-		for (int i = 0; i < 3; i++) {
-			/* Only hex digits: strtoul alone also takes blanks, signs and 0x. */
-			int digits = strspn(s, "0123456789abcdefABCDEF");
-			if (digits < 1 || digits > 4 || s[digits] != (i < 2 ? '/' : '\0'))
-				return 0;
-			unsigned long v = strtoul(s, NULL, 16);
-			unsigned long max = (1ul << (4 * digits)) - 1;
-			rgb = rgb << 8 | (v * 255 + max / 2) / max;
-			s += digits + 1;
-		}
-		*out = rgb;
-		return 1;
-	}
-	if (!pango_color_parse(&c, s))
-		return 0;
-	*out = (uint32_t)(c.red >> 8) << 16 | (c.green >> 8) << 8 | (c.blue >> 8);
-	return 1;
-}
-
-/* Last global "Mwm*key: value" line of ~/.config/mwc/mwmrc. */
-static char *mwmrc_get(const char *key, char *val, size_t n)
-{
-	char path[PATH_MAX];
-	const char *home = getenv("HOME"), *xdg = getenv("XDG_CONFIG_HOME");
-	int len;
-	/* As mwc: without either there is no mwmrc, not one in /.config. */
-	if (xdg && *xdg)
-		len = snprintf(path, sizeof path, "%s/mwc/mwmrc", xdg);
-	else if (home && *home)
-		len = snprintf(path, sizeof path, "%s/.config/mwc/mwmrc", home);
-	else
-		return NULL;
-	if (len < 0 || (size_t)len >= sizeof path)
-		return NULL;
-	FILE *f = fopen(path, "r");
-	if (!f)
-		return NULL;
-	char *found = NULL, *line = NULL;      /* whole lines, however long */
-	size_t kl = strlen(key), cap = 0;
-	while (getline(&line, &cap, f) > 0) {
-		char *p = line;
-		while (isspace((unsigned char)*p))
-			p++;
-		/* As mwc reads it: any case, "." or "*", blanks before the ":". */
-		char *colon = strchr(p, ':');
-		if (!colon)
-			continue;
-		char *ke = colon;
-		while (ke > p && isspace((unsigned char)ke[-1]))
-			ke--;
-		if (strncasecmp(p, "mwm", 3) || (p[3] != '*' && p[3] != '.') ||
-		    (size_t)(ke - (p + 4)) != kl || strncasecmp(p + 4, key, kl))
-			continue;
-		p = colon + 1;
-		while (isspace((unsigned char)*p))
-			p++;
-		char *e = p + strlen(p);
-		while (e > p && isspace((unsigned char)e[-1]))
-			*--e = 0;
-		/* The last line wins, as in mwc, even a bad one: too long to keep is
-		 * no value, not a cut one nor the one before. */
-		if ((size_t)(e - p) < n) {
-			memcpy(val, p, e - p + 1);
-			found = val;
-		} else {
-			found = NULL;
-		}
-	}
-	free(line);
-	fclose(f);
-	return found;
-}
-
 static int mwmrc_color(const char *res, uint32_t *out)
 {
 	char v[256];
@@ -433,27 +302,12 @@ static PangoFontDescription *dock_font(PangoContext *pctx)
 
 static void theme_init(void)
 {
-	uint32_t bg = setting("MWC_INACTIVE", "background", 0xaeb2c3);
-	uint32_t fg;
-	/* Text as mwc's titles: the resource if set, else black or white. */
-	if (!mwmrc_color("foreground", &fg))
-		fg = contrast(bg);
-
-	px_bg = bg;
-	px_top = mix(bg, 0xffffff, 0.55f);
-	px_bot = mix(bg, 0x000000, 0.5f);
-	/* Lighter than mwc's scrollbar trough (0.25), as in osDisplay: that one is as
-	 * bright as the fill beside it, which then stands out by hue alone. */
-	px_trough = mix(bg, 0x000000, 0.12f);
-	px_list = mix(bg, 0xffffff, 0.3f);
-	px_paper = 0xf6f6f6;
-	px_sel = setting("MWC_ACTIVE", "activeBackground", 0x7387ad);
-	if (!mwmrc_color("activeForeground", &xc_sel_fg))
-		xc_sel_fg = contrast(px_sel);
-	xc_fg = fg;
-	xc_dim = dimmed(bg, fg);
-	/* readable on dark themes */
-	xc_err = contrast(bg) == 0xffffff ? 0xffa0a0 : 0x8a0303;
+	uint32_t fg, sel_fg;
+	int has_fg = mwmrc_color("foreground", &fg);
+	int has_sel_fg = mwmrc_color("activeForeground", &sel_fg);
+	palette(&pal, setting("MWC_INACTIVE", "background", 0xaeb2c3),
+		setting("MWC_ACTIVE", "activeBackground", 0x7387ad),
+		has_fg ? &fg : NULL, has_sel_fg ? &sel_fg : NULL);
 
 	PangoContext *pctx = pango_font_map_create_context(
 		pango_cairo_font_map_get_default());
@@ -461,6 +315,10 @@ static void theme_init(void)
 	plo = pango_layout_new(pctx);
 	pango_layout_set_font_description(plo, desc);
 	pango_layout_set_single_paragraph_mode(plo, TRUE);
+	/* Left to right as a paragraph, as in deskControl: text() places the text at
+	 * the left of its box, and a right-to-left sink name would otherwise be flushed
+	 * to its right. */
+	pango_layout_set_auto_dir(plo, FALSE);
 	PangoFontMetrics *m = pango_context_get_metrics(pctx, desc, NULL);
 	font_asc = PANGO_PIXELS_CEIL(pango_font_metrics_get_ascent(m));
 	font_desc = PANGO_PIXELS_CEIL(pango_font_metrics_get_descent(m));
@@ -666,13 +524,13 @@ static void bevel_in(struct rect r, int w, uint32_t t, uint32_t b)
 
 static void bevel(struct rect r, int raised)
 {
-	bevel_in(r, BEV, raised ? px_top : px_bot, raised ? px_bot : px_top);
+	bevel_in(r, BEV, raised ? pal.top : pal.bot, raised ? pal.bot : pal.top);
 }
 
 /* mwm's thin border: a raised bevel and one line of the face inside it. */
 static void draw_frame(void)
 {
-	uint32_t face = activated ? px_sel : px_bg;
+	uint32_t face = activated ? pal.sel : pal.bg;
 	fill(face, 0, 0, W, FRAME);
 	fill(face, 0, H - FRAME, W, FRAME);
 	fill(face, 0, 0, FRAME, H);
@@ -737,7 +595,7 @@ static void draw_speaker(struct rect r, int muted, int off)
 {
 	int cy = r.y + r.h / 2 + off, a = r.h / 5;
 	int x = r.x + r.w / 2 - 2 * a + off;
-	set_rgb(sink_state == SINK_OK ? xc_fg : xc_dim);
+	set_rgb(sink_state == SINK_OK ? pal.fg : pal.dim);
 	cairo_move_to(cr, x, cy - a / 2);
 	cairo_line_to(cr, x + a, cy - a / 2);
 	cairo_line_to(cr, x + 2 * a, cy - a - 1);
@@ -748,7 +606,7 @@ static void draw_speaker(struct rect r, int muted, int off)
 	cairo_fill(cr);
 	int wx = x + 2 * a + 2;
 	if (muted) {
-		set_rgb(xc_err);
+		set_rgb(pal.err);
 		cairo_set_line_width(cr, 2);
 		cairo_move_to(cr, wx, cy - a + 1);
 		cairo_line_to(cr, wx + a + 1, cy + a);
@@ -756,11 +614,23 @@ static void draw_speaker(struct rect r, int muted, int off)
 		cairo_line_to(cr, wx, cy + a);
 		cairo_stroke(cr);
 	} else {
-		fill(sink_state == SINK_OK ? xc_fg : xc_dim, wx, cy - a / 2, 1,
+		fill(sink_state == SINK_OK ? pal.fg : pal.dim, wx, cy - a / 2, 1,
 			a + 1);
-		fill(sink_state == SINK_OK ? xc_fg : xc_dim, wx + 2, cy - a, 1,
+		fill(sink_state == SINK_OK ? pal.fg : pal.dim, wx + 2, cy - a, 1,
 			2 * a + 1);
 	}
+}
+
+static int in(struct rect r, int x, int y)
+{
+	return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+}
+
+/* As a Motif push button: in while the press is held over it, out while the pointer
+ * is off it, and in again when it comes back. */
+static int btn_down(void)
+{
+	return btn_pressed && in(r_btn, ptr_x, ptr_y);
 }
 
 static void paint(void)
@@ -768,33 +638,33 @@ static void paint(void)
 	char s[32];
 	int ok = sink_state == SINK_OK;
 	layout();
-	fill(px_bg, 0, 0, W, H);
+	fill(pal.bg, 0, 0, W, H);
 	draw_frame();
 
 	/* mute button: stays in while muted */
-	int down = (ok && sink_mute) != btn_pressed;
+	int down = (ok && sink_mute) != btn_down();
 	bevel(r_btn, !down);
 	draw_speaker(r_btn, ok && sink_mute, down);
 
 	/* scale */
 	int tx = thumb_x(), ix = r_scale.x + BEV, iy = r_scale.y + BEV;
 	int iw = r_scale.w - 2 * BEV, ih = r_scale.h - 2 * BEV;
-	fill(px_trough, ix, iy, iw, ih);
+	fill(pal.trough, ix, iy, iw, ih);
 	if (ok && !sink_mute)
-		fill(px_sel, ix, iy, tx - ix, ih);
+		fill(pal.sel, ix, iy, tx - ix, ih);
 	bevel(r_scale, 0);
 	if (ok) {
 		struct rect sl = { tx, iy, THUMB, ih };
-		fill(px_bg, sl.x, sl.y, sl.w, sl.h);
+		fill(pal.bg, sl.x, sl.y, sl.w, sl.h);
 		bevel(sl, 1);
-		fill(px_bot, tx + THUMB / 2 - 1, iy + BEV, 1, ih - 2 * BEV);
-		fill(px_top, tx + THUMB / 2, iy + BEV, 1, ih - 2 * BEV);
+		fill(pal.bot, tx + THUMB / 2 - 1, iy + BEV, 1, ih - 2 * BEV);
+		fill(pal.top, tx + THUMB / 2, iy + BEV, 1, ih - 2 * BEV);
 	}
 
 	/* volume field */
 	int fx = r_pct.x + BEV, fy = r_pct.y + BEV;
 	int fw = r_pct.w - 2 * BEV, fh = r_pct.h - 2 * BEV;
-	fill(editing ? px_paper : px_list, fx, fy, fw, fh);
+	fill(editing ? pal.paper : pal.list, fx, fy, fw, fh);
 	bevel(r_pct, 0);
 	if (editing) {
 		/* Nothing typed yet: the volume as it is now, also after another
@@ -804,15 +674,16 @@ static void paint(void)
 		snprintf(s, sizeof s, "%s %%", edit_buf);
 		int tw = textw(s), tpos = fx + fw - FIELD_PAD / 2 - tw;
 		if (edit_fresh) {
-			fill(px_sel, tpos - 1, fy + 1, tw + 2, fh - 2);
+			fill(pal.sel, tpos - 1, fy + 1, tw + 2, fh - 2);
 		} else {
 			fill(0x000000, tpos + textw(edit_buf), fy + 2, 1, fh - 4);
 		}
-		text(edit_fresh ? xc_sel_fg : 0x000000, tpos, r_pct.y, r_pct.h,
+		text(edit_fresh ? pal.sel_fg : 0x000000, tpos, r_pct.y, r_pct.h,
 			fw, s);
 	} else if (ok) {
 		snprintf(s, sizeof s, "%d %%", sink_pct);
-		text(sink_mute ? xc_dim : xc_fg, fx + fw - FIELD_PAD / 2 - textw(s),
+		text(sink_mute ? pal.list_dim : pal.list_fg,
+			fx + fw - FIELD_PAD / 2 - textw(s),
 			r_pct.y, r_pct.h, fw, s);
 	}
 
@@ -820,21 +691,19 @@ static void paint(void)
 	bevel(r_status, 0);
 	int sx = r_status.x + BEV + 4, sw = r_status.w - 2 * BEV - 8;
 	if (ok)
-		text(xc_fg, sx, r_status.y, r_status.h, sw, sink_desc);
+		text(pal.fg, sx, r_status.y, r_status.h, sw, sink_desc);
 	else if (sink_state == SINK_NONE)
-		text(xc_err, sx, r_status.y, r_status.h, sw, "no output device");
+		text(pal.err, sx, r_status.y, r_status.h, sw, "no output device");
 	else if (!ctx || pa_context_get_state(ctx) != PA_CONTEXT_READY)
-		text(retry_at ? xc_err : xc_dim, sx, r_status.y, r_status.h, sw,
+		text(retry_at ? pal.err : pal.dim, sx, r_status.y, r_status.h, sw,
 			retry_at ? "no sound server" : "connecting ...");
 }
 
 /* 0 if the compositor holds both buffers: try again after a release. */
 static int draw(void)
 {
-	/* A pool's size is an int32: a huge window gets fewer pixels, not an error. */
-	int sc = buf_scale;
-	while (sc > 1 && (int64_t)W * sc * 4 * H * sc > INT32_MAX)
-		sc--;
+	/* A huge window gets fewer pixels, not an error. */
+	int sc = draw_scale(W, H, buf_scale);
 	struct shmbuf *b = get_buffer(W * sc, H * sc);
 	if (!b)
 		return 0;
@@ -858,11 +727,6 @@ static int draw(void)
 }
 
 /* ---- input -------------------------------------------------------------- */
-
-static int in(struct rect r, int x, int y)
-{
-	return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
-}
 
 static void scale_to(int x)
 {
@@ -1099,7 +963,9 @@ static void kb_key(void *data, struct wl_keyboard *k, uint32_t serial,
 			repeat_kc = 0;
 		return;
 	}
-	/* A modifier does not stop a key that is repeating. */
+	/* Pressing a key that doesn't repeat, a modifier, leaves the repeat alone.
+	 * Shift held keeps it going; with Ctrl, Alt or Super held key_repeats() is 0
+	 * at the next step, and the repeat ends until the key is pressed again. */
 	int repeats = xkb_keymap_key_repeats(kb_map, kc);
 	if (repeats)
 		repeat_kc = 0;
@@ -1160,16 +1026,14 @@ static void ptr_leave(void *data, struct wl_pointer *p, uint32_t serial,
 static void ptr_motion(void *data, struct wl_pointer *p, uint32_t time,
 	wl_fixed_t x, wl_fixed_t y)
 {
-	int old_x = ptr_x;
+	int old_x = ptr_x, was_down = btn_down();
 	ptr_x = wl_fixed_to_int(x);
 	ptr_y = wl_fixed_to_int(y);
 	/* Only sideways: a hand's jitter must not change a grabbed slider. */
 	if (dragging && ptr_x != old_x)
 		scale_to(ptr_x);
-	if (btn_pressed && !in(r_btn, ptr_x, ptr_y)) {
-		btn_pressed = 0;
+	if (btn_down() != was_down)
 		dirty = 1;
-	}
 }
 
 static void ptr_button(void *data, struct wl_pointer *p, uint32_t serial,
@@ -1179,10 +1043,13 @@ static void ptr_button(void *data, struct wl_pointer *p, uint32_t serial,
 		return;
 	if (state != WL_POINTER_BUTTON_STATE_PRESSED) {
 		end_drag();
+		/* A click counts on the release, over the button it went down on. */
 		if (btn_pressed) {
+			int take = btn_down();
 			btn_pressed = 0;
 			dirty = 1;
-			toggle_mute();
+			if (take)
+				toggle_mute();
 		}
 		return;
 	}
