@@ -5,8 +5,8 @@ the Motif window manager. It is made for [mwc](https://github.com/reygnn/mwc), a
 in its dock beside [deskControl](https://github.com/reygnn/deskControl) and
 [digitalClock](https://github.com/reygnn/digitalClock), and runs on any Wayland
 compositor with xdg-shell. It speaks the Pulse protocol, so it works with
-`pipewire-pulse` too. One C file on libpulse, libwayland, xkbcommon, Cairo and Pango,
-no toolkit.
+`pipewire-pulse` too. C on libpulse, libwayland, xkbcommon, Cairo and Pango, no
+toolkit.
 
 
 ## Build

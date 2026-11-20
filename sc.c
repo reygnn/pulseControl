@@ -50,6 +50,7 @@
 #include <wayland-cursor.h>
 #include <xkbcommon/xkbcommon.h>
 
+#include "seats.h"
 #include "version.h"
 #include <xkbcommon/xkbcommon-keysyms.h>
 
@@ -118,6 +119,7 @@ static struct wl_compositor *compositor;
 static struct wl_shm *shm;
 static struct wl_seat *seat;
 static uint32_t seat_global;    /* its name in the registry */
+static struct seats seats;      /* all announced, for when it goes */
 static struct xdg_wm_base *wm_base;
 static struct wl_surface *surface;
 static struct wl_callback *frame;       /* a frame is on its way */
@@ -1322,6 +1324,13 @@ static void wm_ping(void *data, struct xdg_wm_base *b, uint32_t serial)
 
 static const struct xdg_wm_base_listener wm_base_listener = { wm_ping };
 
+static void seat_bind(struct wl_registry *r, uint32_t name, uint32_t ver)
+{
+	seat = wl_registry_bind(r, name, &wl_seat_interface, MIN(ver, 7));
+	seat_global = name;
+	wl_seat_add_listener(seat, &seat_listener, NULL);
+}
+
 static void registry_global(void *data, struct wl_registry *r, uint32_t name,
 	const char *iface, uint32_t ver)
 {
@@ -1331,10 +1340,9 @@ static void registry_global(void *data, struct wl_registry *r, uint32_t name,
 			MIN(ver, 6));
 	} else if (!strcmp(iface, wl_shm_interface.name)) {
 		shm = wl_registry_bind(r, name, &wl_shm_interface, 1);
-	} else if (!strcmp(iface, wl_seat_interface.name) && !seat) {
-		seat = wl_registry_bind(r, name, &wl_seat_interface, MIN(ver, 7));
-		seat_global = name;
-		wl_seat_add_listener(seat, &seat_listener, NULL);
+	} else if (!strcmp(iface, wl_seat_interface.name)) {
+		if (seats_add(&seats, name, ver) && !seat)
+			seat_bind(r, name, ver);
 	} else if (!strcmp(iface, wp_viewporter_interface.name) && !viewporter) {
 		viewporter = wl_registry_bind(r, name, &wp_viewporter_interface, 1);
 	} else if (!strcmp(iface, xdg_wm_base_interface.name)) {
@@ -1344,9 +1352,11 @@ static void registry_global(void *data, struct wl_registry *r, uint32_t name,
 	}
 }
 
-/* A seat that goes is let go of, so that the next one announced is taken. */
+/* A seat that goes is let go of, and the oldest one left taken; with none, the
+ * next one announced. */
 static void registry_remove(void *data, struct wl_registry *r, uint32_t name)
 {
+	seats_remove(&seats, name);
 	if (!seat || name != seat_global)
 		return;
 	seat_capabilities(NULL, seat, 0);
@@ -1355,6 +1365,9 @@ static void registry_remove(void *data, struct wl_registry *r, uint32_t name)
 	else
 		wl_seat_destroy(seat);
 	seat = NULL;
+	unsigned next, ver;
+	if (seats_next(&seats, &next, &ver))
+		seat_bind(r, next, ver);
 }
 
 static const struct wl_registry_listener registry_listener = {

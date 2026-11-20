@@ -35,3 +35,10 @@ The cursor is the theme's nearest size to `XCURSOR_SIZE` times the scale. When t
 scale doesn't divide that image, wp_viewporter shows it at its size over the scale.
 A compositor without wp_viewporter gets it at the largest scale that divides the
 image, so it can come out larger than `XCURSOR_SIZE` and less sharp.
+
+
+## Input
+
+It keeps the first eight seats the compositor announces. One beyond that is taken
+only if it is announced again after the others went. The headless mwc of `make test`
+has one seat, so `make check` tests the list, not the change of seat.

@@ -8,7 +8,7 @@ WAYLAND_PROTOCOLS := $(shell $(PKG_CONFIG) --variable=pkgdatadir wayland-protoco
 WAYLAND_SCANNER := $(shell $(PKG_CONFIG) --variable=wayland_scanner wayland-scanner 2>/dev/null)
 # Said plainly, rather than as a missing /stable/xdg-shell/xdg-shell.xml; but not to
 # `make clean`, which needs neither.
-ifneq ($(filter-out clean uninstall,$(or $(MAKECMDGOALS),all)),)
+ifneq ($(filter-out clean uninstall check build/test_seats,$(or $(MAKECMDGOALS),all)),)
 ifeq ($(WAYLAND_PROTOCOLS),)
 $(error pkg-config finds no wayland-protocols)
 endif
@@ -29,11 +29,25 @@ SC_CFLAGS = -std=c11 -Wall -Wextra -Wno-unused-parameter -Ibuild \
 	$(shell $(PKG_CONFIG) --cflags $(PKGS))
 SC_LIBS = $(shell $(PKG_CONFIG) --libs $(PKGS)) -lm
 
+MODS = seats.c
+MODS_H = seats.h
+
 all: pulseControl
 
-pulseControl: sc.c version.h $(PROTO_H) $(PROTO_C)
-	$(CC) $(SC_CFLAGS) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ sc.c $(PROTO_C) \
-		$(SC_LIBS) $(LDLIBS)
+pulseControl: sc.c $(MODS) $(MODS_H) version.h $(PROTO_H) $(PROTO_C)
+	$(CC) $(SC_CFLAGS) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ sc.c $(MODS) \
+		$(PROTO_C) $(SC_LIBS) $(LDLIBS)
+
+# The modules without Wayland, each under ASan and UBSan.
+UNIT_CFLAGS = -std=c11 -Wall -Wextra -g -O1 -fsanitize=address,undefined \
+	-fno-sanitize-recover=all
+UNITS = build/test_seats
+
+build/test_seats: tests/test_seats.c seats.c seats.h | build
+	$(CC) $(UNIT_CFLAGS) -I. -o $@ tests/test_seats.c seats.c
+
+check: $(UNITS)
+	@for t in $(UNITS); do echo "$$t"; ./$$t || exit 1; done
 
 build:
 	mkdir -p build
@@ -69,4 +83,4 @@ test: pulseControl
 clean:
 	rm -rf pulseControl build
 
-.PHONY: all install uninstall test clean
+.PHONY: all install uninstall check test clean

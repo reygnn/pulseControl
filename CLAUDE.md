@@ -14,6 +14,7 @@ host has pipewire-pulse and no pulseaudio, so run it in mwc's box:
 | Target | |
 |---|---|
 | `make` | pulseControl |
+| `make check` | the modules without Wayland (`seats.c`) under ASan and UBSan |
 | `make test` | `tests/ui.sh`: a headless mwc and a private PulseAudio with two null sinks, log in `build/ui.log`, pulseControl's own in `build/ui-pulseControl.log`, a failing screenshot in `build/ui-last.png` |
 
 To check that a test fails without a fix, build the old `sc.c` elsewhere and run
@@ -22,8 +23,10 @@ To check that a test fails without a fix, build the old `sc.c` elsewhere and run
 
 ## Rules
 
-- One C file, `sc.c`, no toolkit. The look follows mwc: colours from `MWC_INACTIVE`,
-  `MWC_ACTIVE` or mwc's mwmrc, the bevel rules of mwc's `draw.c`.
+- `sc.c` holds the program, no toolkit. Logic worth testing without Wayland goes into a
+  small module with a unit test in `tests/`, as `seats.c`.
+- The look follows mwc: colours from `MWC_INACTIVE`, `MWC_ACTIVE` or mwc's mwmrc, the
+  bevel rules of mwc's `draw.c`.
 - The tests never touch the real sound card or a running session.
 - A test client pulseControl needs belongs in mwc's `tests/`, not here.
 - C lines at most 100 columns, tabs as 8, as in mwc.
