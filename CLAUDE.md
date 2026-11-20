@@ -7,9 +7,9 @@ Project rules. Everything else: see the global CLAUDE.md, section "C projects".
 
 `make` and `make check` build and run on the host. `make test` needs a built mwc (by
 default `../mwc`, else `MWC_DIR`) with `build/vinput`, `build/pngtool`, `build/xdgc` and
-`build/layerc`, plus grim, pactl and pulseaudio; `PA_MODULES` names pulseaudio's module
-directory if it is elsewhere. The host has pipewire-pulse and no pulseaudio, so run it
-in mwc's box:
+`build/layerc`, plus grim, pactl, pulseaudio and the Adwaita cursor theme; `PA_MODULES`
+names pulseaudio's module directory if it is elsewhere. The host has pipewire-pulse and
+no pulseaudio, so run it in mwc's box:
 `distrobox enter mwc-dev -- bash -lc 'cd ~/data/C-Projects/pulseControl && make test'`.
 
 | Target | |

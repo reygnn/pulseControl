@@ -5,9 +5,9 @@
 # the volume of the real sound card.
 #
 # Needs a built mwc with build/vinput, build/pngtool, build/xdgc and build/layerc in
-# MWC_DIR (by default ../mwc), grim, pactl and pulseaudio (PA_MODULES names its module
-# directory, if it isn't in the usual place). Output goes to build/ui.log, pulseControl's
-# own to build/ui-pulseControl.log.
+# MWC_DIR (by default ../mwc), grim, pactl, pulseaudio (PA_MODULES names its module
+# directory, if it isn't in the usual place) and the Adwaita cursor theme. Output goes
+# to build/ui.log, pulseControl's own to build/ui-pulseControl.log.
 SC_DIR=$(cd "$(dirname "$0")/.." && pwd)
 SC=${SC:-$SC_DIR/pulseControl}
 LOG=$SC_DIR/build/ui.log
@@ -30,8 +30,15 @@ export DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent
 unset MWC_INACTIVE MWC_ACTIVE PULSE_RUNTIME_PATH PULSE_STATE_PATH XCURSOR_PATH
 # The font is fixed: a variable that once chose it must not change it.
 export SC_FONT="Sans 20"
-# The cursor checks count in Adwaita's sizes, whatever the developer uses.
+# The cursor checks count in Adwaita's sizes, whatever the developer uses. Without it
+# wayland-cursor takes its built-in cursor, and they fail with no hint why: mwc's
+# Podman image has no cursor theme. Where wayland-cursor looks, HOME being the test's.
 export XCURSOR_THEME=Adwaita
+for d in "$HOME/.local/share/icons" "$HOME/.icons" /usr/share/icons /usr/share/pixmaps; do
+	[ -d "$d/Adwaita/cursors" ] && break
+	d=
+done
+[ -n "$d" ] || { echo "FAIL: no Adwaita cursor theme (adwaita-icon-theme)"; exit 1; }
 mkdir -p "$HOME"
 : >"$SC_LOG"
 SHOT=$SMOKE_DIR/ui.png

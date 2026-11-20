@@ -37,8 +37,9 @@ In mwc, a place of its own or the dock, in `~/.config/mwc/mwmrc`:
 
 A mute button with a speaker, the scale, the volume in percent, and a status line with
 the name of the output. The scale fills in the active colour up to the slider; muted,
-it stays empty, and the volume is shown in brackets. Only mwm's thin border, in the active colour while pulseControl is the
-active window. The colours are mwc's, see Configuration.
+it stays empty, and the volume is shown in brackets. Only mwm's thin border, in the
+active colour while pulseControl is the active window. The colours are mwc's, see
+Configuration.
 
 It follows the default output and changes made by other programs. Without a sound
 server the status line says so, and pulseControl tries again every second.
@@ -101,7 +102,8 @@ private PulseAudio server with two null sinks, and checks the keys, the mouse, t
 what other programs change, a lost and returning server, the border and focus, and the
 colours. The real sound card is left alone. It needs a built mwc with `build/vinput`,
 `build/pngtool`, `build/xdgc` and `build/layerc` in `MWC_DIR` (by default `../mwc`),
-grim, pactl and pulseaudio; `PA_MODULES` names the module directory if it is elsewhere.
+grim, pactl, pulseaudio and the Adwaita cursor theme; `PA_MODULES` names the module
+directory if it is elsewhere.
 
 On a host with `pipewire-pulse`, apt would remove `pipewire-alsa` for `pulseaudio`, so
 the test belongs in mwc's development box:
