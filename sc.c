@@ -1600,16 +1600,21 @@ static int poll_both(struct pollfd *ufds, unsigned long nfds, int timeout,
 
 int main(int argc, char **argv)
 {
-	if (argc == 2 && !strcmp(argv[1], "-v")) {
-		printf("pulseControl %s\n", PULSECONTROL_VERSION);
-		return 0;
-	}
 	if (argc > 1) {
+		int version = argc == 2 && !strcmp(argv[1], "-v");
 		int help = argc == 2 && !strcmp(argv[1], "-h");
-		/* Asked for, it goes to stdout, as mwc's does. */
-		fprintf(help ? stdout : stderr, "usage: pulseControl [-v]\n"
-			"Environment: MWC_INACTIVE, MWC_ACTIVE.\n");
-		return help ? 0 : 1;
+		if (version)
+			printf("pulseControl %s\n", PULSECONTROL_VERSION);
+		else    /* asked for, it goes to stdout, as mwc's does */
+			fprintf(help ? stdout : stderr, "usage: pulseControl [-v]\n"
+				"Environment: MWC_INACTIVE, MWC_ACTIVE.\n");
+		/* A full disk or a closed stdout is no success: fully buffered, the
+		 * write only fails here. */
+		if (fflush(stdout) == EOF || ferror(stdout)) {
+			fprintf(stderr, "pulseControl: stdout: %s\n", strerror(errno));
+			return 1;
+		}
+		return version || help ? 0 : 1;
 	}
 	setlocale(LC_ALL, "");
 	signal(SIGPIPE, SIG_IGN);       /* as libpulse asks of its programs */

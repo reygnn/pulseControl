@@ -46,6 +46,13 @@ echo "ok: -v prints the version"
 "$SC" -h 2>/dev/null || fail "-h is a usage error"
 "$SC" -h 2>/dev/null | grep -q '^usage:' || fail "-h prints no usage on stdout"
 echo "ok: -h prints the usage on stdout"
+for a in -v -h; do
+	"$SC" $a >/dev/full 2>/dev/null && fail "$a: exit 0 on a full disk"
+	"$SC" $a >&- 2>/dev/null && fail "$a: exit 0 without stdout"
+	"$SC" $a 2>&1 >/dev/full | grep -q '^pulseControl: stdout: ' ||
+		fail "$a: no message on a full disk"
+	echo "ok: $a fails when stdout does"
+done
 [ -z "$("$SC" -x 2>/dev/null)" ] || fail "-x prints on stdout"
 "$SC" -x 2>&1 >/dev/null | grep -q '^usage:' || fail "-x prints no usage on stderr"
 echo "ok: a refused argument gets the usage on stderr"
