@@ -185,6 +185,20 @@ int mtk_key_translate(struct xkb_state *st, struct xkb_compose_state *compose,
 	return 1;
 }
 
+xkb_keysym_t mtk_latin_sym(struct xkb_keymap *map, uint32_t kc, xkb_keysym_t ks)
+{
+	if (ks <= 0xff || !map)
+		return ks;
+	xkb_layout_index_t n = xkb_keymap_num_layouts_for_key(map, kc);
+	for (xkb_layout_index_t g = 0; g < n; g++) {
+		const xkb_keysym_t *syms;
+		if (xkb_keymap_key_get_syms_by_level(map, kc, g, 0, &syms) > 0 &&
+		    syms[0] <= 0xff)
+			return syms[0];
+	}
+	return ks;
+}
+
 void mtk_repeat_init(struct mtk_repeat *r)
 {
 	*r = (struct mtk_repeat){ .rate = 25, .delay = 600 };

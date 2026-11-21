@@ -113,6 +113,37 @@ TEST(compose)
 	unsetenv("LC_ALL");
 }
 
+/* Ctrl+U in a Russian layout is the key that is U in the US one. */
+TEST(latin)
+{
+	struct xkb_rule_names names = { .rules = "evdev", .model = "pc105",
+		.layout = "ru,us" };
+	struct xkb_keymap *ru = xkb_keymap_new_from_names(ctx, &names,
+		XKB_KEYMAP_COMPILE_NO_FLAGS);
+	CHECK(ru != NULL);
+	if (!ru)
+		return;
+	enum { KC_U = 30 };
+	struct xkb_state *s = xkb_state_new(ru);
+	xkb_keysym_t ks = xkb_state_key_get_one_sym(s, KC_U);
+	CHECK(ks == XKB_KEY_Cyrillic_ghe);
+	CHECK_INT(mtk_latin_sym(ru, KC_U, ks), XKB_KEY_u);
+	CHECK_INT(mtk_latin_sym(ru, KC_U, XKB_KEY_U), XKB_KEY_U);       /* Latin as is */
+	CHECK_INT(mtk_latin_sym(NULL, KC_U, ks), ks);
+	/* A key no layout has a Latin one for keeps its own. */
+	CHECK_INT(mtk_latin_sym(ru, KC_LEFT, XKB_KEY_Left), XKB_KEY_Left);
+	xkb_state_unref(s);
+	xkb_keymap_unref(ru);
+	/* Without a Latin layout at all: ks. */
+	names.layout = "ru";
+	ru = xkb_keymap_new_from_names(ctx, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
+	CHECK(ru != NULL);
+	if (ru) {
+		CHECK_INT(mtk_latin_sym(ru, KC_U, XKB_KEY_Cyrillic_ghe), XKB_KEY_Cyrillic_ghe);
+		xkb_keymap_unref(ru);
+	}
+}
+
 TEST(quits)
 {
 	CHECK(mtk_key_quits(XKB_KEY_Escape, 0));
@@ -311,6 +342,7 @@ int main(void)
 	RUN(mods);
 	RUN(translate);
 	RUN(compose);
+	RUN(latin);
 	RUN(quits);
 	RUN(repeat);
 	RUN(seats);

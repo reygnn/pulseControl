@@ -17,7 +17,7 @@
 #include <xkbcommon/xkbcommon.h>
 #include <xkbcommon/xkbcommon-compose.h>
 
-#define MTK_VERSION "0.4.0"
+#define MTK_VERSION "0.5.0"
 
 /* ---- colours (color.c) ---------------------------------------------------- */
 
@@ -186,6 +186,11 @@ struct xkb_compose_state *mtk_compose_new(struct xkb_context *ctx);
 int mtk_key_translate(struct xkb_state *st, struct xkb_compose_state *compose,
 	uint32_t kc, xkb_keysym_t *sym, char utf8[64]);
 
+/* For a shortcut: in a layout without Latin letters, such as Russian, the key that
+ * is ks in the first layout of map that has a Latin one there, as Qt reads it; ks
+ * itself where it is Latin already or no layout has one. */
+xkb_keysym_t mtk_latin_sym(struct xkb_keymap *map, uint32_t kc, xkb_keysym_t ks);
+
 /* Key repeat, by the compositor's rate (keys a second, 0 for none) and delay
  * (ms). Times are in ms on any clock that does not go back. */
 struct mtk_repeat {
@@ -241,6 +246,8 @@ struct mtk_config {
 	void (*global)(struct mtk *m, struct wl_registry *r, uint32_t name,
 		const char *iface, uint32_t ver, void *data);
 	void (*global_remove)(struct mtk *m, uint32_t name, void *data);
+	/* Each time before the loop waits, after what was due is drawn. */
+	void (*idle)(struct mtk *m, void *data);
 	void *data;
 };
 
@@ -284,6 +291,7 @@ void mtk_after_poll(struct mtk *m, short revents);
 struct mtk_key {
 	uint32_t kc;            /* xkb keycode */
 	xkb_keysym_t sym;
+	xkb_keysym_t latin;     /* sym for a shortcut: mtk_latin_sym() */
 	const char *utf8;       /* the text it makes, "" for none */
 	unsigned mods;          /* MTK_MOD_* */
 	int repeat;             /* not pressed but repeated */
@@ -375,7 +383,10 @@ int mtk_window_focused(const struct mtk_window *w);
 struct mtk *mtk_window_mtk(const struct mtk_window *w);
 struct wl_surface *mtk_window_surface(const struct mtk_window *w);
 struct xdg_toplevel *mtk_window_toplevel(const struct mtk_window *w);
-/* How often it has painted, for tests. */
+/* For tests: how often it has painted, and whether a paint is due. */
 unsigned mtk_window_paints(const struct mtk_window *w);
+int mtk_window_dirty(const struct mtk_window *w);
+/* For tests: how often a cursor theme was loaded. */
+unsigned mtk_cursor_loads(struct mtk *m);
 
 #endif
