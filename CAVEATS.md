@@ -42,8 +42,17 @@ wp_viewporter gets it at the largest scale that divides the image, so it can com
 larger than `XCURSOR_SIZE` and less sharp.
 
 
+## Colours
+
+Without `Mwm*foreground` and `Mwm*activeForeground` the text is black or white by
+Motif's rule, as mwc's titles. On a mid-tone that can fall short of WCAG's 4.5:1: on
+mwc's activeBackground `#7387ad` the selected volume is white at about 3.8:1. Dimmed
+text and errors are never harder to read than the text. The volume field is
+pulseControl's own face and keeps 4.5:1.
+
+
 ## Input
 
 It keeps the first eight seats the compositor announces. One beyond that is taken
 only if it is announced again after the others went. The headless mwc of `make test`
-has one seat, so `make check` tests the list, not the change of seat.
+has one seat, so mtk's unit test checks the list, not the change of seat.

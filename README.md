@@ -5,8 +5,8 @@ the Motif window manager. It is made for [mwc](https://github.com/reygnn/mwc), a
 in its dock beside [deskControl](https://github.com/reygnn/deskControl) and
 [digitalClock](https://github.com/reygnn/digitalClock), and runs on any Wayland
 compositor with xdg-shell. It speaks the Pulse protocol, so it works with
-`pipewire-pulse` too. C on libpulse, libwayland, xkbcommon, Cairo and Pango, no
-toolkit.
+`pipewire-pulse` too. C on libpulse and [mtk](https://github.com/reygnn/mtk), the
+toolkit of mwc's clients, vendored in `mtk/`: libwayland, xkbcommon, Cairo and Pango.
 
 
 ## Build
@@ -71,8 +71,8 @@ field. The balance between the channels is kept.
 
 Without the colour variables it reads `Mwm*background` and `Mwm*activeBackground` from
 `~/.config/mwc/mwmrc`, else the Motif defaults. The text takes `Mwm*foreground` and
-`Mwm*activeForeground` from there as mwc's titles do, else black or white, whichever
-reads better.
+`Mwm*activeForeground` from there as mwc's titles do, else black or white as Motif
+picks it.
 
 The font is fixed as DejaVu Sans 10, the same in deskControl, pulseControl, osDisplay
 and digitalClock, so that the four are as high as each other in the dock. Without it

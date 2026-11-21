@@ -512,9 +512,8 @@ do_input key 0
 do_input key Return
 expect_vol "back at 50" first 50 50
 
-# The text on the active colour, a mid-tone: black reads better on it than white.
-# Counted in the middle of the selection, inside the field's paper, which is near
-# white itself.
+# The text on the active colour, a mid-tone: white, as Motif picks it and mwc's titles
+# have it. Counted in the middle of the selection, inside the field's paper.
 do_input move $((CX + FIELD_X)) $((CY + ROW))
 do_input click left
 field_has "a click selects the volume" "$SEL"
@@ -524,22 +523,23 @@ for ((i = 0; i < 30; i++)); do
 		set -- $((CX + FIELD_M - 5)) $((CY + 10)) 10 $((BARH - 8))
 		black=$(build/pngtool count "$SHOT" "$@" 000000)
 		white=$(build/pngtool count "$SHOT" "$@" ffffff)
-		[ "$black" -gt 0 ] && [ "$white" = 0 ] && { ink_ok=1; break; }
+		[ "$white" -gt 0 ] && [ "$black" = 0 ] && { ink_ok=1; break; }
 	fi
 	sleep 0.1
 done
 [ -n "$ink_ok" ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
 	fail "the selected volume has $black pixels near black and $white near white"; }
-echo "ok: the selected volume is black"
+echo "ok: the selected volume is white"
 do_input key Escape
 wait_pixel "Esc closes the field" "$FIELD_X" "$FIELD_Y" c6c9d5
 
 # An open field with nothing typed shows the volume as it is now. Its ink differs
 # between 50 % and 11 %: counted once each, then 11 % set while the field is open.
+# field_ink [rrggbb]: black by default; the selected volume's is white.
 field_ink() {
 	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null &&
 		build/pngtool count "$SHOT" $((CX + FIELD_L)) $((CY + 10)) \
-			$((FIELD_X - FIELD_L + 1)) $((BARH - 8)) 000000
+			$((FIELD_X - FIELD_L + 1)) $((BARH - 8)) "${1:-000000}"
 }
 # The first and last column of the field with ink in them, "l r", in the window.
 ink_span() {
@@ -564,10 +564,10 @@ open_field() {
 	do_input click left
 	field_has "$1" "$SEL"
 }
-field_shows() { # <ink>
+field_shows() { # <ink> [rrggbb]
 	local i
 	for ((i = 0; i < 30; i++)); do
-		[ "$(field_ink)" = "$1" ] && return 0
+		[ "$(field_ink "${2:-}")" = "$1" ] && return 0
 		sleep 0.1
 	done
 	return 1
@@ -575,16 +575,16 @@ field_shows() { # <ink>
 pactl set-sink-volume first 11%
 shows "11 % is shown" 11
 open_field "the field opens at 11 %"
-ink11=$(field_ink)
+ink11=$(field_ink ffffff)
 do_input key Escape
 pactl set-sink-volume first 50%
 shows "50 % is shown" 50
 open_field "the field opens at 50 %"
-ink50=$(field_ink)
+ink50=$(field_ink ffffff)
 [ "$ink11" != "$ink50" ] || fail "11 % and 50 % have the same ink ($ink11)"
 pactl set-sink-volume first 11%
-field_shows "$ink11" || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
-	fail "the open field doesn't follow the volume: ink $(field_ink), at 11 % $ink11"; }
+field_shows "$ink11" ffffff || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
+	fail "the open field doesn't follow the volume: ink $(field_ink ffffff), at 11 % $ink11"; }
 echo "ok: the open field follows another program"
 do_input key Escape
 pactl set-sink-volume first 50%

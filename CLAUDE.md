@@ -15,7 +15,7 @@ no pulseaudio, so run it in mwc's box:
 | Target | |
 |---|---|
 | `make` | pulseControl |
-| `make check` | the modules without Wayland (`theme.c`, `util.c`) under ASan and UBSan |
+| `make check` | `theme.c`, the palette, with mtk's modules without Wayland, under ASan and UBSan |
 | `make test` | `tests/ui.sh`: a headless mwc and a private PulseAudio with two null sinks, log in `build/ui.log`, pulseControl's own in `build/ui-pulseControl.log`, a failing screenshot in `build/ui-last.png` |
 
 To check that a test fails without a fix, build the old `sc.c` elsewhere and run
@@ -24,10 +24,11 @@ To check that a test fails without a fix, build the old `sc.c` elsewhere and run
 
 ## Rules
 
-- `sc.c` holds the program, no toolkit. Logic worth testing without Wayland goes into a
-  small module with a unit test in `tests/`, as `theme.c` and `util.c`.
-- The look follows mwc: colours from `MWC_INACTIVE`, `MWC_ACTIVE` or mwc's mwmrc, the
-  bevel rules of mwc's `draw.c`.
+- `sc.c` holds the program, on mtk in `mtk/`, vendored with git subtree: changed in
+  mtk's repository and taken with `git subtree pull --prefix=mtk`, never edited here.
+  Logic worth testing without Wayland goes into a small module with a unit test in
+  `tests/`, as `theme.c`.
+- The look follows mwc through mtk: its colours, Motif's shadows and text colour.
 - The tests never touch the real sound card or a running session.
 - A test client pulseControl needs belongs in mwc's `tests/`, not here.
 - C lines at most 100 columns, tabs as 8, as in mwc.
