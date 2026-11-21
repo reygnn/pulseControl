@@ -82,9 +82,13 @@ static int pending;
 static int quitting;
 
 static int dragging, drag_off, btn_pressed;
-/* Typing the volume. Fresh: what is shown goes at the first digit. */
-static int editing, edit_fresh;
+/* Typing the volume, in an mtk field: fresh, the volume shown is selected and goes
+ * at the first digit. */
+static int editing;
 static char edit_buf[16];
+static int percent_ok(char *t, size_t size, void *data);
+static struct mtk_field field = { .text = edit_buf, .size = sizeof edit_buf,
+	.selects = 1, .accept = percent_ok };
 
 static struct mtk *m;
 static struct mtk_window *win;
@@ -448,17 +452,19 @@ static void paint(struct mtk_window *w, cairo_t *c, int width, int height, void 
 	if (editing) {
 		/* Nothing typed yet: the volume as it is now, also after another
 		 * program or a volume key changed it. */
-		if (edit_fresh)
-			snprintf(edit_buf, sizeof edit_buf, "%d", sink_pct);
+		if (field.fresh) {
+			snprintf(s, sizeof s, "%d", sink_pct);
+			mtk_field_set(&field, s);
+		}
 		snprintf(s, sizeof s, "%s %%", edit_buf);
 		/* Centred as the volume is when closed, so opening it moves nothing. */
 		int tw = textw(s), tpos = fx + (fw - tw) / 2;
-		if (edit_fresh) {
+		if (field.fresh) {
 			fill(pal.sel, tpos - 1, fy + 1, tw + 2, fh - 2);
 		} else {
 			fill(0x000000, tpos + textw(edit_buf), fy + 2, 1, fh - 4);
 		}
-		text(edit_fresh ? pal.sel_fg : 0x000000, tpos, r_pct.y, r_pct.h,
+		text(field.fresh ? pal.sel_fg : 0x000000, tpos, r_pct.y, r_pct.h,
 			fw, s);
 	} else if (ok) {
 		/* Muted in brackets, not dimmed: on a mid grey the field's text has
@@ -526,8 +532,10 @@ static void edit_begin(void)
 {
 	if (sink_state != SINK_OK || editing)
 		return;
-	editing = edit_fresh = 1;
-	snprintf(edit_buf, sizeof edit_buf, "%d", sink_pct);
+	char s[16];
+	editing = 1;
+	snprintf(s, sizeof s, "%d", sink_pct);
+	mtk_field_set(&field, s);
 	redraw();
 }
 
@@ -543,7 +551,7 @@ static void edit_cancel(void)
  * zero ends the muting, unlike a step. */
 static void edit_commit(void)
 {
-	int typed = !edit_fresh && edit_buf[0];
+	int typed = !field.fresh && edit_buf[0];
 	int pct = atoi(edit_buf);
 	edit_cancel();
 	if (!typed)
@@ -553,40 +561,29 @@ static void edit_commit(void)
 		toggle_mute();
 }
 
-/* Keeps to 0..100: a digit that would go past it doesn't arrive. */
-static void edit_digit(int d)
+/* What the field takes: digits up to 100, without a leading zero ("05" is 5). A
+ * digit that would go past 100 doesn't arrive. */
+static int percent_ok(char *t, size_t size, void *data)
 {
-	char next[sizeof edit_buf];
-	size_t n = edit_fresh ? 0 : strlen(edit_buf);
-	if (n == 1 && edit_buf[0] == '0')
-		n = 0;          /* not "05" */
-	if (n >= 3)
-		return;
-	memcpy(next, edit_buf, n);
-	next[n] = (char)('0' + d);
-	next[n + 1] = 0;
-	if (atoi(next) > 100)
-		return;
-	memcpy(edit_buf, next, n + 2);
-	edit_fresh = 0;
-	redraw();
+	for (const char *p = t; *p; p++)
+		if (*p < '0' || *p > '9')
+			return 0;
+	while (t[0] == '0' && t[1])
+		memmove(t, t + 1, strlen(t));
+	return strlen(t) <= 3 && atoi(t) <= 100;
 }
 
+/* Digits and BackSpace go to the field; the cursor stays at its end. */
 static void edit_key(xkb_keysym_t ks)
 {
 	int d = key_digit(ks);
-	if (d >= 0) {
-		edit_digit(d);
-		return;
-	}
-	switch (ks) {
-	case XKB_KEY_BackSpace: {
-		size_t n = edit_fresh ? 0 : strlen(edit_buf);
-		edit_buf[n ? n - 1 : 0] = 0;
-		edit_fresh = 0;
-		redraw();
+	char t[2] = { (char)('0' + d), 0 };
+	switch (d >= 0 ? XKB_KEY_0 : ks) {
+	case XKB_KEY_0:
+	case XKB_KEY_BackSpace:
+		if (mtk_field_key(&field, ks, d >= 0 ? t : "", 0) != MTK_FIELD_NONE)
+			redraw();
 		break;
-	}
 	case XKB_KEY_Return: case XKB_KEY_KP_Enter:
 		edit_commit();
 		break;
