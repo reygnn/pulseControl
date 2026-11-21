@@ -66,7 +66,7 @@ field. The balance between the channels is kept.
 
 | Variable | Default | |
 |---|---|---|
-| `MWC_INACTIVE`, `MWC_ACTIVE` | `#aeb2c3`, `#7387ad` | background; fill, focused border |
+| `MWC_INACTIVE`, `MWC_ACTIVE` | `#aaaaaa`, `#c6c1aa` | background; fill, focused border |
 | `PULSE_SERVER` | | another sound server, as for every Pulse program |
 
 Without the colour variables it reads `Mwm*background` and `Mwm*activeBackground` from

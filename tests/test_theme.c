@@ -49,14 +49,20 @@ static void test_palette(void)
 	for (size_t i = 0; i < sizeof hues / sizeof hues[0]; i++)
 		check_palette(hues[i]);
 
-	/* mwc's default look: Motif's shadows, white on the active colour */
-	struct mtk_theme t = theme_of(0xaeb2c3, 0x7387ad);
+	/* mwc's default look, IRIX Base: Motif's shadows, black on the light stone,
+	 * and black on the built-in grey, as mtk_theme_load() gives it */
+	struct mtk_theme t = { .inactive = mtk_shade(0xaaaaaa, 0),
+		.active = mtk_shade(0xc6c1aa, mtk_text_color(0xc6c1aa)) };
 	struct palette p;
 	palette(&p, &t);
-	CHECK(p.top == 0xdddee6 && p.bot == 0x5e6069);
-	CHECK(p.fg == 0x000000 && p.list_fg == 0x000000 && p.err == 0x8a0303);
-	CHECK(p.sel_fg == 0xffffff && p.paper == 0xf6f6f6);
-	CHECK(p.list == 0xc6c9d5 && p.trough == 0x999dac);
+	CHECK(p.top == 0xdadada && p.bot == 0x5a5a5a);
+	CHECK(p.fg == 0x000000 && p.list_fg == 0x000000 && p.err == 0x830303);
+	CHECK(p.sel_fg == 0x000000 && p.paper == 0xf6f6f6);
+	CHECK(p.list == 0xc4c4c4 && p.trough == 0x969696);
+	/* Motif's old look: white on its focused blue */
+	t = theme_of(0xaeb2c3, 0x7387ad);
+	palette(&p, &t);
+	CHECK(p.sel_fg == 0xffffff && p.err == 0x8a0303);
 	/* the mwmrc's text colours win */
 	t.inactive.fg = 0x112233;
 	t.active.fg = 0xffeedd;
