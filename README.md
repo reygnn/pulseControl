@@ -30,7 +30,9 @@ In mwc, a place of its own or the dock, in `~/.config/mwc/mwmrc`:
     Mwm*pulseControl*geometry:   -0-0
     Mwm*pulseControl*dock:       true
 
-`-v` prints the version, which is set in `version.h`.
+`-v` prints the version, which is set in `version.h`,
+and the commit built, as `VERSION+DATE.TIME.HASH` with its commit time in UTC
+and `.dirty` for changes not committed.
 
 
 ## Look

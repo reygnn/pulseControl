@@ -48,7 +48,13 @@ ERR_SHOT=$SC_DIR/build/ui-last.png
 rm -f "$ERR_SHOT"
 
 # Only -v, and it needs no compositor.
-want="pulseControl $(sed -n 's/.*_VERSION "\(.*\)"/\1/p' "$SC_DIR/version.h")"
+# The version from version.h, then the commit the build is from where git knows it.
+want=$(sed -n 's/^#define PULSECONTROL_VERSION "\([^"]*\)".*/pulseControl \1/p' "$SC_DIR/version.h")
+if commit=$(TZ=UTC0 git -C "$SC_DIR" log -1 --format=%cd.%h \
+		--date=format-local:%Y%m%d.%H%M 2>/dev/null); then
+	git -C "$SC_DIR" diff --quiet HEAD || commit=$commit.dirty
+	want=$want+$commit
+fi
 [ "$("$SC" -v)" = "$want" ] || fail "-v prints '$("$SC" -v)', not '$want'"
 echo "ok: -v prints the version"
 "$SC" -h 2>/dev/null || fail "-h is a usage error"

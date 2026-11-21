@@ -17,7 +17,7 @@ SC_LIBS = $(shell $(PKG_CONFIG) --libs libpulse) $(MTK_LIBS)
 MODS = theme.c
 MODS_H = theme.h
 
-pulseControl: sc.c $(MODS) $(MODS_H) version.h $(MTK_DEPS)
+pulseControl: sc.c $(MODS) $(MODS_H) version.h build/gitversion.h $(MTK_DEPS)
 	$(CC) $(SC_CFLAGS) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ sc.c $(MODS) \
 		$(MTK_SRC) $(SC_LIBS) $(LDLIBS)
 
@@ -38,6 +38,17 @@ check: $(UNITS)
 build:
 	mkdir -p build
 
+# The commit a build is from, after the version: +DATE.TIME.HASH, its commit time in
+# UTC, and .dirty for changes not committed. Rewritten only when it changes, so
+# pulseControl is linked again only then; empty without git.
+build/gitversion.h: FORCE | build
+	@v=$$(TZ=UTC0 git log -1 --format=%cd.%h --date=format-local:%Y%m%d.%H%M 2>/dev/null); \
+	if [ -n "$$v" ] && ! git diff --quiet HEAD 2>/dev/null; then v=$$v.dirty; fi; \
+	line="#define PULSECONTROL_GIT \"$${v:++$$v}\""; \
+	[ "$$(cat $@ 2>/dev/null)" = "$$line" ] || echo "$$line" >$@
+
+FORCE:
+
 install: pulseControl
 	install -Dm755 pulseControl $(DESTDIR)$(PREFIX)/bin/pulseControl
 	install -d $(DESTDIR)$(PREFIX)/share/applications
@@ -57,4 +68,4 @@ test: pulseControl
 clean:
 	rm -rf pulseControl build
 
-.PHONY: all install uninstall check test clean
+.PHONY: all install uninstall check test clean FORCE
