@@ -52,8 +52,9 @@ static void state_write(void)
 	mtk_window_size(win, &w, &h);
 	snprintf(now, sizeof now, "focus %d\nscale %d\nsize %dx%d\npaints %u\nkeys %u\n"
 		"repeats %u\nclicks %u\npress %d %d\nscrolls %u\nsteps %d\nsignals %u\n"
-		"ticks %u\ntext %s\n", focused, scale, w, h, mtk_window_paints(win), keys,
-		repeats, clicks, press_x, press_y, scrolls, steps, signals, ticks, text);
+		"ticks %u\ndirty %d\ncursors %u\ntext %s\n", focused, scale, w, h,
+		mtk_window_paints(win), keys, repeats, clicks, press_x, press_y, scrolls, steps,
+		signals, ticks, mtk_window_dirty(win), mtk_cursor_loads(m), text);
 	if (!strcmp(now, last) ||
 	    (size_t)snprintf(tmp, sizeof tmp, "%s.tmp", state_path) >= sizeof tmp)
 		return;
@@ -125,7 +126,7 @@ static void key(struct mtk_window *w, const struct mtk_key *k, void *data)
 	keys++;
 	repeats += k->repeat;
 	if (k->sym == XKB_KEY_Escape ||
-	    ((k->mods & MTK_MOD_CTRL) && (k->sym == XKB_KEY_q || k->sym == XKB_KEY_Q))) {
+	    ((k->mods & MTK_MOD_CTRL) && (k->latin == XKB_KEY_q || k->latin == XKB_KEY_Q))) {
 		done = 1;
 		mtk_quit(m, 0);
 		return;
@@ -221,10 +222,9 @@ static void tick(struct mtk *mm, void *data)
 	mtk_timer(mm, 100, tick, NULL);
 }
 
-static void after_events(struct mtk *mm, void *data)
+static void idle(struct mtk *mm, void *data)
 {
 	state_write();
-	mtk_timer(mm, 20, after_events, NULL);
 }
 
 /* The loop a client with another library's has: mtk's fd beside its own. */
@@ -265,7 +265,7 @@ int main(int argc, char **argv)
 	e = getenv("MTKDEMO_MAXIMIZED");
 	int maximized = e && *e == '1';
 
-	m = mtk_open(&(struct mtk_config){ .name = "mtkdemo" });
+	m = mtk_open(&(struct mtk_config){ .name = "mtkdemo", .idle = idle });
 	if (!m)
 		return 1;
 	mtk_theme_load(&theme);
@@ -291,7 +291,6 @@ int main(int argc, char **argv)
 	signal(SIGUSR1, on_signal);
 	mtk_watch_fd(m, sig_pipe[0], POLLIN, signal_read, NULL);
 	mtk_timer(m, 100, tick, NULL);
-	mtk_timer(m, 0, after_events, NULL);
 	e = getenv("MTKDEMO_OWN_LOOP");
 	int status = e && *e == '1' ? own_loop() : mtk_run(m);
 

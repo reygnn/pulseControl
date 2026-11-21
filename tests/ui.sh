@@ -184,6 +184,9 @@ p0=$(ds paints)
 sleep 0.5
 [ "$(ds paints)" = "$p0" ] || fail "it paints without a change: $p0, then $(ds paints)"
 echo "ok: no paint without a change"
+[ "$(ds dirty)" = 0 ] || fail "it says a paint is due"
+echo "ok: and none is due"
+check "the cursor theme was loaded once" "[ \"\$(ds cursors)\" = 1 ]"
 
 # ---- the scale ------------------------------------------------------------------
 # At scale 2 it draws twice the pixels: the first one of the face beside the bevel is
@@ -192,6 +195,7 @@ echo 'Mwm*HEADLESS-1*outputScale: 2' >>"$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 check "the output is scaled" "[ \"\$(global output_HEADLESS-1 scale)\" = 200 ]"
 check "the demo at scale 2" "[ \"\$(ds scale)\" = 2 ]"
+check "the cursor theme loaded again, for it" "[ \"\$(ds cursors)\" = 2 ]"
 refresh
 where
 check "the same size in the layout" "[ \"\$(get mtkdemo w)x\$(get mtkdemo h)\" = 300x120 ]"
@@ -247,6 +251,17 @@ kill -USR1 "$PID_demo"
 check "its own fd" "[ \"\$(ds signals)\" = 1 ]"
 pixel_at "its border is the active one" 0 60 $ACT_TOP
 quit_demo Escape
+
+# ---- shortcuts in a layout without Latin letters ---------------------------------
+# Ctrl+Q in a Russian layout is the key that is Q in the US one, as Qt reads it.
+stop_vinput
+start_vinput 1280 720 ru,us
+MTKDEMO_FIXED=1 start_demo
+do_input key q
+check "q types a Cyrillic letter" "[ \"\$(ds text)\" = й ]"
+quit_demo ctrl+q
+stop_vinput
+start_vinput
 
 # ---- past what Cairo draws -----------------------------------------------------
 # 9000 wide is 36000 at scale 4, past the 32767 Cairo draws: drawn at 3 and enlarged

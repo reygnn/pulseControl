@@ -121,6 +121,7 @@ struct mtk {
 	int cursor_buf_scale;           /* the buffer scale its image is shown at */
 	int cursor_vw, cursor_vh;       /* its size on the window, if the viewport sets it */
 	char cursor_name[32];           /* the one loaded */
+	unsigned cursor_loads;
 
 	struct watch watch[MAX_WATCH];
 	int nwatch;
@@ -322,9 +323,11 @@ static void cursor_update(struct mtk *m)
 	const char *name = win && win->cursor ? win->cursor : "default";
 	if (m->cursor_scale != scale || strcmp(m->cursor_name, name)) {
 		struct wl_cursor_theme *t = m->cursor_theme;
-		if (m->cursor_scale != scale)
+		if (m->cursor_scale != scale) {
 			t = wl_cursor_theme_load(getenv("XCURSOR_THEME"),
 				mtk_cursor_size(getenv("XCURSOR_SIZE")) * scale, m->shm);
+			m->cursor_loads++;
+		}
 		struct wl_cursor *c = t ? find_cursor(t, name) : NULL;
 		if (!c && t && strcmp(name, "default"))
 			c = find_cursor(t, "default");
@@ -365,6 +368,7 @@ static int key_make(struct mtk *m, uint32_t kc, int repeat, struct mtk_key *k,
 	if (!mtk_key_translate(m->kb_state, m->compose, kc, &k->sym, utf8))
 		return 0;
 	k->kc = kc;
+	k->latin = mtk_latin_sym(m->kb_map, kc, k->sym);
 	k->utf8 = utf8;
 	k->mods = mtk_mods(m->kb_state);
 	k->repeat = repeat;
@@ -1095,6 +1099,16 @@ unsigned mtk_window_paints(const struct mtk_window *win)
 	return win->paints;
 }
 
+int mtk_window_dirty(const struct mtk_window *win)
+{
+	return win->dirty;
+}
+
+unsigned mtk_cursor_loads(struct mtk *m)
+{
+	return m->cursor_loads;
+}
+
 /* ---- the loop ------------------------------------------------------------- */
 
 int mtk_watch_fd(struct mtk *m, int fd, short events, mtk_fd_fn fn, void *data)
@@ -1189,6 +1203,8 @@ void mtk_before_poll(struct mtk *m, struct pollfd *pfd, int *timeout)
 		key_repeat(m);
 		run_timers(m);
 		draw_windows(m);
+		if (m->cfg.idle)
+			m->cfg.idle(m, m->cfg.data);
 		if (wl_display_prepare_read(m->dpy) == 0)
 			break;
 		/* events arrived in the meantime */
