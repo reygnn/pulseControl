@@ -647,13 +647,13 @@ static void key_action(xkb_keysym_t ks, unsigned mods)
 
 static void key(struct mtk_window *w, const struct mtk_key *k, void *data)
 {
-	key_action(k->sym, k->mods);
+	key_action(k->latin, k->mods);  /* M and Q in a Russian layout too */
 }
 
 /* Only the volume repeats when a key is held. */
 static int key_repeats(struct mtk_window *w, const struct mtk_key *k, void *data)
 {
-	switch (k->sym) {
+	switch (k->latin) {
 	case XKB_KEY_XF86AudioRaiseVolume:
 	case XKB_KEY_XF86AudioLowerVolume:
 		return 1;

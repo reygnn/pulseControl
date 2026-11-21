@@ -1108,6 +1108,17 @@ grep -q 'font DejaVu Sans not found' "$SC_LOG" ||
 echo "ok: without DejaVu Sans it warns"
 sc_quit
 
+# ---- a layout without Latin letters ------------------------------------------------
+# q and Ctrl+Q are the key that is Q in the first Latin layout, as Qt reads it.
+stop_vinput
+start_vinput 1280 720 ru,us
+sc_start
+sc_quit
+sc_start
+do_input key ctrl+q
+sc_exits ctrl+q
+check "Ctrl+Q closes the window" '[ -z "$(get pulseControl w)" ]'
+
 trap cleanup EXIT
 pa_stop
 stop_vinput
