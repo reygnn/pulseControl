@@ -462,6 +462,35 @@ do_input key 5
 do_input key Return
 expect_vol "and so is a lone one" first 5 5
 
+# ---- AZERTY -------------------------------------------------------------------------
+# A plain key is what the layout gives. vinput names keys where the us layout has
+# them: its 6 is '-' in fr, a step down, not the 6 on its Shift level, which would
+# open the field; its semicolon is fr's m, its m fr's comma, its a fr's q.
+stop_vinput
+start_vinput 1280 720 fr
+pactl set-sink-volume first 50%
+shows "at 50 in fr" 50
+do_input key 6
+do_input key Return
+expect_vol "'-' on AZERTY is quieter" first 45 45
+do_input press 6
+check "and repeats when held" '[ "$(vol_of first | cut -d" " -f1)" -le 30 ]'
+do_input lift 6
+pactl set-sink-volume first 50%
+shows "at 50 again" 50
+do_input key m
+do_input key semicolon
+expect_mute "m mutes, the comma on the us m doesn't" first yes
+do_input key semicolon
+expect_mute "unmuted" first no
+do_input key a
+sc_exits "q on the us a"
+check "q closes the window" '[ -z "$(get pulseControl w)" ]'
+stop_vinput
+start_vinput
+pactl set-sink-volume first 5%
+sc_start
+
 do_input move $((CX + FIELD_X)) $((CY + ROW))
 do_input click left
 wait_pixel "a click opens the field" "$FIELD_X" "$FIELD_Y" f6f6f6

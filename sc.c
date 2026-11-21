@@ -642,15 +642,25 @@ static void key_action(xkb_keysym_t ks, unsigned mods)
 	}
 }
 
+/* What a key means here: what the layout gives, so that '-' on AZERTY is minus and
+ * not the 6 on its Shift level. The us layout's key for a letter outside Latin-1, M
+ * and Q in a Russian layout, and with Ctrl, as a shortcut. */
+static xkb_keysym_t key_sym(const struct mtk_key *k)
+{
+	if ((k->mods & MTK_MOD_CTRL) || xkb_keysym_to_utf32(k->sym) > 0xff)
+		return k->latin;
+	return k->sym;
+}
+
 static void key(struct mtk_window *w, const struct mtk_key *k, void *data)
 {
-	key_action(k->latin, k->mods);  /* M and Q in a Russian layout too */
+	key_action(key_sym(k), k->mods);
 }
 
 /* Only the volume repeats when a key is held. */
 static int key_repeats(struct mtk_window *w, const struct mtk_key *k, void *data)
 {
-	switch (k->latin) {
+	switch (key_sym(k)) {
 	case XKB_KEY_XF86AudioRaiseVolume:
 	case XKB_KEY_XF86AudioLowerVolume:
 		return 1;
