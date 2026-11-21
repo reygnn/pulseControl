@@ -16,10 +16,9 @@ void palette(struct palette *p, const struct mtk_theme *t)
 	/* Text as mwc's titles: the resource if set, else as Motif picks it. */
 	p->fg = t->inactive.fg;
 	p->sel_fg = t->active.fg;
-	p->dim = mtk_dimmed(bg, p->fg);
-	/* Light on dark themes; on the greys between moved towards the text. */
-	p->err = mtk_readable(bg, mtk_best_contrast(bg) == 0xffffff ? 0xffa0a0 : 0x8a0303,
-		p->fg);
+	/* mtk's, as for all mwc's clients: the error a red at 4.5:1 on any bg. */
+	p->dim = t->dim;
+	p->err = t->err;
 	/* The field is pulseControl's own face, lighter than bg: its text reads at
 	 * 4.5:1, moved from fg towards black or white as far as that needs. */
 	p->list_fg = mtk_readable(p->list, p->fg, mtk_best_contrast(p->list));

@@ -14,11 +14,13 @@ static struct mtk_theme theme_of(uint32_t bg, uint32_t sel)
 {
 	struct mtk_theme t = { .inactive = mtk_shade(bg, mtk_text_color(bg)),
 		.active = mtk_shade(sel, mtk_text_color(sel)) };
+	mtk_theme_lists(&t);            /* dim and err, as mtk_theme_load() */
 	return t;
 }
 
-/* The text on mwc's faces as Motif picks it, as mwc's titles; what is made of it
- * reads at least as well, 4.5:1 or the text's own where that is less. The volume
+/* The text on mwc's faces as Motif picks it, as mwc's titles; the dimmed text
+ * reads at least as well, 4.5:1 or the text's own where that is less, and the error
+ * at 4.5:1 whatever the text has. The volume
  * field is pulseControl's own face and reads at 4.5:1 (review 2026-11-20, F1 and
  * F2). Any grey, some hues, as background and as active colour. */
 static void check_palette(uint32_t bg)
@@ -31,7 +33,7 @@ static void check_palette(uint32_t bg)
 	const char *bad = p.fg != mtk_text_color(bg) ? "text" :
 		p.sel_fg != mtk_text_color(bg) ? "selection" :
 		mtk_contrast_ratio(p.bg, p.dim) < need ? "dimmed text" :
-		mtk_contrast_ratio(p.bg, p.err) < need ? "error" :
+		mtk_contrast_ratio(p.bg, p.err) < 4.5f ? "error" :
 		mtk_contrast_ratio(p.list, p.list_fg) < 4.5f ? "volume" : NULL;
 	checks++;
 	if (bad) {
@@ -53,6 +55,7 @@ static void test_palette(void)
 	 * and black on the built-in grey, as mtk_theme_load() gives it */
 	struct mtk_theme t = { .inactive = mtk_shade(0xaaaaaa, 0),
 		.active = mtk_shade(0xc6c1aa, mtk_text_color(0xc6c1aa)) };
+	mtk_theme_lists(&t);
 	struct palette p;
 	palette(&p, &t);
 	CHECK(p.top == 0xdadada && p.bot == 0x5a5a5a);
