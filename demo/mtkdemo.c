@@ -126,13 +126,13 @@ static void paint(struct mtk_window *w, cairo_t *cr, int ww, int wh, void *data)
 		y + 5 + pressed);
 	field_rect(ww, wh, &x, &y, &bw, &bh);
 	mtk_shadow(cr, x, y, bw, bh, MTK_BEVEL, face, 1);
-	mtk_fill(cr, 0xf6f6f6, x + MTK_BEVEL, y + MTK_BEVEL, bw - 2 * MTK_BEVEL,
+	mtk_fill(cr, theme.field.bg, x + MTK_BEVEL, y + MTK_BEVEL, bw - 2 * MTK_BEVEL,
 		bh - 2 * MTK_BEVEL);
 	cairo_save(cr);
 	cairo_rectangle(cr, x + MTK_BEVEL, y + MTK_BEVEL, bw - 2 * MTK_BEVEL,
 		bh - 2 * MTK_BEVEL);
 	cairo_clip(cr);
-	mtk_text(cr, lo, text, 0x000000, x + MTK_BEVEL + 4, y + MTK_BEVEL + 3);
+	mtk_text(cr, lo, text, theme.field.fg, x + MTK_BEVEL + 4, y + MTK_BEVEL + 3);
 	cairo_restore(cr);
 }
 

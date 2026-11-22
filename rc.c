@@ -96,30 +96,33 @@ static int rc_color(const char *res, uint32_t *out)
 	return mtk_parse_color(mtk_mwmrc_get(res, v, sizeof v), out);
 }
 
-/* As mwc's setting_color(): the environment, the mwmrc, the default; *builtin says
- * the default it was. One that is no colour counts as not set. */
-static uint32_t setting(const char *env, const char *res, uint32_t def, int *builtin)
+/* As mwc's setting_color(): the environment, the mwmrc, the default. One that is no
+ * colour counts as not set. */
+static uint32_t setting(const char *env, const char *res, uint32_t def)
 {
 	uint32_t rgb;
-	*builtin = 0;
 	if (mtk_parse_color(getenv(env), &rgb) || rc_color(res, &rgb))
 		return rgb;
-	*builtin = 1;
 	return def;
 }
 
-/* A list and the row selected on it, faces of the clients' own, and the dimmed
+/* A list and the row selected on it, a field, a trough and a folder, faces of the
+ * clients' own, and the dimmed
  * and the error text on the window. The list is lighter
  * than the window; the active colour, as mwc's titles have it, often lands on its
- * brightness (Base: #c4c4c4 and #c6c1aa, 1.04:1), so the selection is moved apart.
- * Text that was chosen, set, the palette's or the built-in grey's black, stays as
- * far as it reads; Motif's own is left for the better of black and white. */
+ * brightness (IRIX's Base: #c4c4c4 and #c6c1aa, 1.04:1), so the selection is moved
+ * apart. Text that was chosen, textForeground or a client's own, stays as far as it
+ * reads; Motif's own is left for the better of black and white. */
 void mtk_theme_lists(struct mtk_theme *t)
 {
 	uint32_t bg = t->inactive.bg, fg = t->inactive.fg;
 	uint32_t list = mtk_mix(bg, 0xffffff, 0.3f), lbest = mtk_best_contrast(list);
-	int chosen = t->has_fg || t->palette || fg != mtk_text_color(bg);
+	int chosen = t->has_fg || fg != mtk_text_color(bg);
 	t->list = mtk_shade(list, chosen ? mtk_readable(list, fg, lbest) : lbest);
+	uint32_t field = 0xf6f6f6, fbest = mtk_best_contrast(field);
+	t->field = mtk_shade(field, chosen ? mtk_readable(field, fg, fbest) : fbest);
+	t->trough = mtk_mix(bg, 0x000000, 0.12f);
+	t->folder = 0xc9a85c;
 	uint32_t sel = mtk_apart(list, t->active.bg, MTK_SELECT_CONTRAST);
 	t->select = mtk_shade(sel, mtk_readable(sel, t->active.fg, mtk_best_contrast(sel)));
 	t->dim = mtk_dimmed(bg, fg);
@@ -131,34 +134,20 @@ void mtk_theme_lists(struct mtk_theme *t)
 
 void mtk_theme_load(struct mtk_theme *t)
 {
-	/* IRIX 6.5's Base scheme, as mwc's defaults: a grey, and a light stone for
-	 * the window that has the focus. */
-	int builtin, unused;
-	uint32_t bg = setting("MWC_INACTIVE", "background", COLOR_INACTIVE, &builtin);
-	uint32_t act = setting("MWC_ACTIVE", "activeBackground", COLOR_ACTIVE, &unused);
-	uint32_t fg, afg;
-	t->has_fg = rc_color("foreground", &fg);
+	/* The client palette, as IRIX's programs drew: basicBackground with
+	 * textForeground, else mwc's #c4c4c4 with black; the frame colours are mwc's
+	 * alone, but for the active one, a client's border and selection. The text is
+	 * small, so it gets WCAG's 4.5:1 where the palette or Motif's rule falls short. */
+	uint32_t act = setting("MWC_ACTIVE", "activeBackground", COLOR_ACTIVE);
+	uint32_t basic = COLOR_BASIC, text = COLOR_TEXT, afg;
+	int has_basic = rc_color("basicBackground", &basic);
+	t->has_fg = rc_color("textForeground", &text);
 	t->has_active_fg = rc_color("activeForeground", &afg);
-	uint32_t basic;
-	t->palette = rc_color("basicBackground", &basic);
-	if (t->palette) {
-		/* IRIX's client palette: the tools draw as IRIX's programs did, on
-		 * BasicBackground with TextForeground, not on the frame colours. Their
-		 * text is small, so it gets WCAG's 4.5:1 where the palette or Motif's
-		 * rule falls short. foreground is the frames' title text then. */
-		uint32_t text, best = mtk_best_contrast(basic), abest = mtk_best_contrast(act);
-		t->inactive = mtk_shade(basic, rc_color("textForeground", &text) ?
-			mtk_readable(basic, text, best) : best);
-		t->active = mtk_shade(act, mtk_readable(act, t->has_active_fg ? afg : abest,
-			abest));
-		t->has_fg = 0;
-	} else {
-		/* The built-in grey takes the Base palette's black text, as in mwc;
-		 * Motif would pick white, at 67 %. A grey that is set, #aaaaaa too,
-		 * gets Motif's choice. */
-		t->inactive = mtk_shade(bg, t->has_fg ? fg :
-			color_inactive_text(bg, builtin));
-		t->active = mtk_shade(act, t->has_active_fg ? afg : mtk_text_color(act));
-	}
+	/* A face that is set and no text: the better of black and white. */
+	uint32_t best = mtk_best_contrast(basic), abest = mtk_best_contrast(act);
+	if (has_basic && !t->has_fg)
+		text = best;
+	t->inactive = mtk_shade(basic, mtk_readable(basic, text, best));
+	t->active = mtk_shade(act, mtk_readable(act, t->has_active_fg ? afg : abest, abest));
 	mtk_theme_lists(t);
 }

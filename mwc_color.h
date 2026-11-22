@@ -5,7 +5,6 @@
 #define MTK_MWC_COLOR_H
 
 #define color_text mtk_mwc_text
-#define color_inactive_text mtk_mwc_inactive_text
 #define color_shades mtk_mwc_shades
 #include "mwc/color.h"
 

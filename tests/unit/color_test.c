@@ -1,5 +1,6 @@
 /* color_test.c - color.c: mwc's Motif shades and text, WCAG, colour names. */
 #include "../../mtk.h"
+#include "../../mwc_color.h"
 #include "unit.h"
 
 TEST(mix)
@@ -26,6 +27,16 @@ TEST(shade)
 	s = mtk_shade(0x2e5e3e, 0);
 	CHECK_INT(s.top, 0x9bb2a2);
 	CHECK_INT(s.bot, 0x142a1c);
+	s = mtk_shade(0xc6c1aa, 0);
+	CHECK(s.top == 0xe7e5db && s.bot == 0x6b685c);
+	s = mtk_shade(0xaaaaaa, 0);
+	CHECK(s.top == 0xdadada && s.bot == 0x5a5a5a);
+	s = mtk_shade(COLOR_ACTIVE, 0);
+	CHECK(s.top == 0x9db2c9 && s.bot == 0x152a42);
+	s = mtk_shade(COLOR_INACTIVE, 0);
+	CHECK(s.top == 0xdfdfdf && s.bot == 0x616161);
+	s = mtk_shade(COLOR_BASIC, 0);
+	CHECK(s.top == 0xe6e6e6 && s.bot == 0x6c6c6c);
 	/* Light: both darker. */
 	s = mtk_shade(0xf0f0f0, 0);
 	CHECK_INT(s.top, 0xc0c0c0);
@@ -58,6 +69,11 @@ TEST(text_color)
 	CHECK_INT(mtk_text_color(0x000000), 0xffffff);
 	CHECK_INT(mtk_text_color(0xaeb2c3), 0x000000);  /* the default frame, at 71% */
 	CHECK_INT(mtk_text_color(0x7387ad), 0xffffff);  /* the focused one, at 55% */
+	CHECK_INT(mtk_text_color(0xc6c1aa), 0x000000);  /* at 74% */
+	CHECK_INT(mtk_text_color(0xaaaaaa), 0xffffff);  /* at 67% */
+	CHECK_INT(mtk_text_color(COLOR_ACTIVE), 0xffffff);
+	CHECK_INT(mtk_text_color(COLOR_INACTIVE), 0x000000);    /* at 71%, no rule of its own */
+	CHECK_INT(mtk_text_color(COLOR_BASIC), 0x000000);
 	CHECK_INT(mtk_text_color(0x8a0303), 0xffffff);
 	CHECK_INT(mtk_text_color(0xffff00), 0x000000);
 	CHECK_INT(mtk_text_color(0xffd700), 0xffffff);  /* gold: mwm's is white too */
@@ -146,6 +162,16 @@ static int color(const char *s, uint32_t *c)
 	return mtk_parse_color(s, c);
 }
 
+/* The defaults mwc and mtk share. */
+TEST(defaults)
+{
+	CHECK_INT(COLOR_ACTIVE, 0x2e5a8c);
+	CHECK_INT(COLOR_INACTIVE, 0xb4b4b4);
+	CHECK_INT(COLOR_BASIC, 0xc4c4c4);
+	CHECK_INT(COLOR_TEXT, 0x000000);
+	CHECK_INT(COLOR_ROOT, 0x5b7792);
+}
+
 TEST(parse_color)
 {
 	uint32_t c;
@@ -182,6 +208,7 @@ int main(void)
 	RUN(dimmed);
 	RUN(readable);
 	RUN(apart);
+	RUN(defaults);
 	RUN(parse_color);
 	return unit_done();
 }

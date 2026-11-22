@@ -47,11 +47,6 @@ uint32_t color_text(uint32_t bg)
 	return xm_brightness(c) > XM_FOREGROUND ? 0x000000 : 0xffffff;
 }
 
-uint32_t color_inactive_text(uint32_t bg, bool builtin)
-{
-	return builtin ? 0x000000 : color_text(bg);
-}
-
 /*
  * By brightness:
  *   dark (below 20%):   both towards white, the top 50%, the bottom 30%;
