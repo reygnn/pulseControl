@@ -4,11 +4,10 @@
  *
  * libpulse and mtk (mtk/), the toolkit of mwc's clients, which brings the window,
  * the seat, the cursor, the colours and the bevels. It controls the default output
- * and follows it when it changes, or when something else changes its volume. It
- * reads the same colours as mwc: MWC_INACTIVE / MWC_ACTIVE from the environment,
- * else Mwm*background and Mwm*activeBackground from ~/.config/mwc/mwmrc, else the
- * Motif defaults. The text takes Mwm*foreground and Mwm*activeForeground, else
- * black or white as Motif picks it.
+ * and follows it when it changes, or when something else changes its volume. Its
+ * colours are all mtk's client palette: Mwm*basicBackground and Mwm*textForeground
+ * from ~/.config/mwc/mwmrc, else #c4c4c4 and black, and mwc's active colour,
+ * MWC_ACTIVE, else Mwm*activeBackground, else #2e5a8c.
  *
  * Keys:   Up / Right / +  louder        Down / Left / -  quieter
  *         m / Space       mute          Esc / q / Ctrl+Q / Ctrl+W  quit
@@ -447,7 +446,7 @@ static void paint(struct mtk_window *w, cairo_t *c, int width, int height, void 
 	/* volume field */
 	int fx = r_pct.x + BEV, fy = r_pct.y + BEV;
 	int fw = r_pct.w - 2 * BEV, fh = r_pct.h - 2 * BEV;
-	fill(editing ? pal.paper : pal.list, fx, fy, fw, fh);
+	fill(editing ? pal.field : pal.list, fx, fy, fw, fh);
 	bevel(r_pct, 0);
 	if (editing) {
 		/* Nothing typed yet: the volume as it is now, also after another
@@ -462,9 +461,9 @@ static void paint(struct mtk_window *w, cairo_t *c, int width, int height, void 
 		if (field.fresh) {
 			fill(pal.sel, tpos - 1, fy + 1, tw + 2, fh - 2);
 		} else {
-			fill(0x000000, tpos + textw(edit_buf), fy + 2, 1, fh - 4);
+			fill(pal.field_fg, tpos + textw(edit_buf), fy + 2, 1, fh - 4);
 		}
-		text(field.fresh ? pal.sel_fg : 0x000000, tpos, r_pct.y, r_pct.h,
+		text(field.fresh ? pal.sel_fg : pal.field_fg, tpos, r_pct.y, r_pct.h,
 			fw, s);
 	} else if (ok) {
 		/* Muted in brackets, not dimmed: on a mid grey the field's text has
@@ -845,7 +844,7 @@ int main(int argc, char **argv)
 			printf("pulseControl %s\n", PULSECONTROL_VERSION);
 		else    /* asked for, it goes to stdout, as mwc's does */
 			fprintf(help ? stdout : stderr, "usage: pulseControl [-v]\n"
-				"Environment: MWC_INACTIVE, MWC_ACTIVE.\n");
+				"Environment: MWC_ACTIVE.\n");
 		/* A full disk or a closed stdout is no success: fully buffered, the
 		 * write only fails here. */
 		if (fflush(stdout) == EOF || ferror(stdout)) {

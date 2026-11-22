@@ -68,13 +68,17 @@ field. The balance between the channels is kept.
 
 | Variable | Default | |
 |---|---|---|
-| `MWC_INACTIVE`, `MWC_ACTIVE` | `#aaaaaa`, `#c6c1aa` | background; fill, focused border |
+| `MWC_ACTIVE` | `#2e5a8c` | fill, selection, focused border |
 | `PULSE_SERVER` | | another sound server, as for every Pulse program |
 
-Without the colour variables it reads `Mwm*background` and `Mwm*activeBackground` from
-`~/.config/mwc/mwmrc`, else the Motif defaults. The text takes `Mwm*foreground` and
-`Mwm*activeForeground` from there as mwc's titles do, else black or white as Motif
-picks it.
+The colours are mtk's (`mtk/README.md`, Colours), and pulseControl sets none of its
+own. Without `MWC_ACTIVE` the active colour is `Mwm*activeBackground` from
+`~/.config/mwc/mwmrc`, its text `Mwm*activeForeground`. The face is
+`Mwm*basicBackground`, else `#c4c4c4`, its text `Mwm*textForeground`, else black; a
+`basicBackground` without `textForeground` gets black or white. Text with less than
+4.5:1 on its face is moved towards black or white as far as that needs. The volume
+field, its trough and the field to type in are mtk's `list`, `trough` and `field`.
+`MWC_INACTIVE`, `Mwm*background` and `Mwm*foreground` colour mwc's frames only.
 
 The font is fixed as DejaVu Sans 10, the same in deskControl, pulseControl, osDisplay
 and digitalClock, so that the four are as high as each other in the dock. Without it

@@ -42,8 +42,11 @@ done
 mkdir -p "$HOME"
 : >"$SC_LOG"
 SHOT=$SMOKE_DIR/ui.png
-SEL=c6c1aa      # mwc's defaults, IRIX Base
-TROUGH=969696
+# mtk's defaults: the face, the active colour, the trough and the closed field
+BG=c4c4c4
+SEL=2e5a8c
+TROUGH=acacac
+LIST=d6d6d6
 ERR_SHOT=$SC_DIR/build/ui-last.png
 rm -f "$ERR_SHOT"
 
@@ -236,13 +239,13 @@ scale_end() {
 	# Stderr: the caller captures stdout, and would swallow the message.
 	WAYLAND_DISPLAY=wayland-0 grim "$shot" 2>/dev/null || fail "no screenshot" >&2
 	for ((x = CX + W - 1; x > CX; x--)); do
-		[ "$(build/pngtool pixel "$shot" "$x" "$y")" != aaaaaa ] && break
+		[ "$(build/pngtool pixel "$shot" "$x" "$y")" != "$BG" ] && break
 	done
 	for (( ; x > CX; x--)); do
-		[ "$(build/pngtool pixel "$shot" "$x" "$y")" = aaaaaa ] && break
+		[ "$(build/pngtool pixel "$shot" "$x" "$y")" = "$BG" ] && break
 	done
 	for (( ; x > CX; x--)); do
-		[ "$(build/pngtool pixel "$shot" "$x" "$y")" != aaaaaa ] && break
+		[ "$(build/pngtool pixel "$shot" "$x" "$y")" != "$BG" ] && break
 	done
 	echo $((x - CX - 1))
 }
@@ -328,7 +331,7 @@ WAYLAND_DISPLAY=wayland-0 "$MWC_DIR/build/xdgc" app=thief size=200x100 \
 PID_thief=$!
 check "another window takes the keyboard" \
 	"[ \"\$(get thief kbfocus)\" = 1 ] && [ \"\$(get pulseControl kbfocus)\" = 0 ]"
-pixel_is "without it the frame is inactive" $((WX + 2)) $((CY + ROW)) aaaaaa
+pixel_is "without it the frame is inactive" $((WX + 2)) $((CY + ROW)) "$BG"
 kill "$PID_thief" 2>/dev/null
 wait "$PID_thief" 2>/dev/null
 do_input move $((CX + 20)) $((CY + H - 10))
@@ -421,11 +424,11 @@ wait_pixel "a digit opens the field" "$FIELD_X" "$FIELD_Y" f6f6f6
 do_input key 2
 do_input key Return
 expect_vol "digits and Return set the volume" first 42 42
-wait_pixel "and close the field" "$FIELD_X" "$FIELD_Y" c4c4c4
+wait_pixel "and close the field" "$FIELD_X" "$FIELD_Y" "$LIST"
 
 do_input key 7
 do_input key Escape
-wait_pixel "Esc closes the field" "$FIELD_X" "$FIELD_Y" c4c4c4
+wait_pixel "Esc closes the field" "$FIELD_X" "$FIELD_Y" "$LIST"
 kill -0 "$SC_PID" 2>/dev/null || fail "Esc in the field ended pulseControl"
 expect_vol "and leaves the volume" first 42 42
 
@@ -501,7 +504,7 @@ do_input move $((CX + FIELD_X)) $((CY + ROW))
 do_input click left
 wait_pixel "a click opens the field" "$FIELD_X" "$FIELD_Y" f6f6f6
 do_input key Return
-wait_pixel "Return without typing closes the field" "$FIELD_X" "$FIELD_Y" c4c4c4
+wait_pixel "Return without typing closes the field" "$FIELD_X" "$FIELD_Y" "$LIST"
 expect_vol "and changes nothing" first 5 5
 
 do_input click left
@@ -516,7 +519,7 @@ do_input click left
 do_input key 9
 do_input move $((CX + 20)) $((CY + H - 10))
 do_input click left
-wait_pixel "a click beside the field closes it" "$FIELD_X" "$FIELD_Y" c4c4c4
+wait_pixel "a click beside the field closes it" "$FIELD_X" "$FIELD_Y" "$LIST"
 do_input key Up
 expect_vol "and takes nothing" first 38 38
 do_input key Down
@@ -547,8 +550,8 @@ do_input key 0
 do_input key Return
 expect_vol "back at 50" first 50 50
 
-# The text on the active colour, mwc's light stone: black, as Motif picks it and mwc's
-# titles have it. Counted in the middle of the selection, inside the field's paper.
+# The text on the active colour, mwc's blue: white, as Motif picks it and mwc's titles
+# have it. Counted in the middle of the selection, inside the field.
 do_input move $((CX + FIELD_X)) $((CY + ROW))
 do_input click left
 field_has "a click selects the volume" "$SEL"
@@ -558,23 +561,24 @@ for ((i = 0; i < 30; i++)); do
 		set -- $((CX + FIELD_M - 5)) $((CY + 10)) 10 $((BARH - 8))
 		black=$(build/pngtool count "$SHOT" "$@" 000000)
 		white=$(build/pngtool count "$SHOT" "$@" ffffff)
-		[ "$black" -gt 0 ] && [ "$white" = 0 ] && { ink_ok=1; break; }
+		[ "$white" -gt 0 ] && [ "$black" = 0 ] && { ink_ok=1; break; }
 	fi
 	sleep 0.1
 done
 [ -n "$ink_ok" ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
 	fail "the selected volume has $black pixels near black and $white near white"; }
-echo "ok: the selected volume is black"
+echo "ok: the selected volume is white"
 do_input key Escape
-wait_pixel "Esc closes the field" "$FIELD_X" "$FIELD_Y" c4c4c4
+wait_pixel "Esc closes the field" "$FIELD_X" "$FIELD_Y" "$LIST"
 
 # An open field with nothing typed shows the volume as it is now. Its ink differs
 # between 50 % and 11 %: counted once each, then 11 % set while the field is open.
-# field_ink [rrggbb]: black by default; the selected volume's is white.
+# field_ink [rrggbb [tol]]: black by default; the selected volume's is white, counted
+# within 8 so that the field's #f6f6f6 beside the selection is not.
 field_ink() {
 	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null &&
 		build/pngtool count "$SHOT" $((CX + FIELD_L)) $((CY + 10)) \
-			$((FIELD_X - FIELD_L + 1)) $((BARH - 8)) "${1:-000000}"
+			$((FIELD_X - FIELD_L + 1)) $((BARH - 8)) "${1:-000000}" ${2:+"$2"}
 }
 # The first and last column of the field with ink in them, "l r", in the window.
 ink_span() {
@@ -599,10 +603,10 @@ open_field() {
 	do_input click left
 	field_has "$1" "$SEL"
 }
-field_shows() { # <ink> [rrggbb]
+field_shows() { # <ink> [rrggbb [tol]]
 	local i
 	for ((i = 0; i < 30; i++)); do
-		[ "$(field_ink "${2:-}")" = "$1" ] && return 0
+		[ "$(field_ink "${2:-}" "${3:-}")" = "$1" ] && return 0
 		sleep 0.1
 	done
 	return 1
@@ -610,16 +614,16 @@ field_shows() { # <ink> [rrggbb]
 pactl set-sink-volume first 11%
 shows "11 % is shown" 11
 open_field "the field opens at 11 %"
-ink11=$(field_ink)
+ink11=$(field_ink ffffff 8)
 do_input key Escape
 pactl set-sink-volume first 50%
 shows "50 % is shown" 50
 open_field "the field opens at 50 %"
-ink50=$(field_ink)
+ink50=$(field_ink ffffff 8)
 [ "$ink11" != "$ink50" ] || fail "11 % and 50 % have the same ink ($ink11)"
 pactl set-sink-volume first 11%
-field_shows "$ink11" || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
-	fail "the open field doesn't follow the volume: ink $(field_ink), at 11 % $ink11"; }
+field_shows "$ink11" ffffff 8 || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
+	fail "the open field doesn't follow the volume: ink $(field_ink ffffff 8), not $ink11"; }
 echo "ok: the open field follows another program"
 do_input key Escape
 pactl set-sink-volume first 50%
@@ -729,7 +733,7 @@ do_input up left
 
 # Above 100 %: shown, can go down, doesn't go up.
 pactl set-sink-volume first 130%
-wait_pixel "the slider stays inside the scale above 100 %" $((S1 - 5)) "$ROW" aaaaaa
+wait_pixel "the slider stays inside the scale above 100 %" $((S1 - 5)) "$ROW" "$BG"
 # Up and a grab of the slider keep it; Down after them lowers it from 130.
 do_input key Up
 do_input move $((CX + $(thumb_mid 100))) $((CY + ROW))
@@ -780,19 +784,19 @@ shows "the old default is back again" 45
 
 pactl unload-module module-null-sink
 wait_pixel "without a sink the scale is empty" $((S0 + 2)) "$ROW" "$TROUGH"
-status_has "the status line says so" 830303
-# The speaker is dimmed then, but still at 4.5:1 on the face: 3c3c3c as in
+status_has "the status line says so" 8a0303
+# The speaker is dimmed then, but still at 4.5:1 on the face: 4e4e4e as in
 # digitalClock. Drawn without antialiasing, so exact; the text has subpixel fringes.
 dim_ok=
 for ((i = 0; i < 30; i++)); do
 	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null &&
 		[ "$(build/pngtool count "$SHOT" $((CX + 6)) $((CY + 6)) "$BARH" "$BARH" \
-			3c3c3c 0)" -gt 8 ] && { dim_ok=1; break; }
+			4e4e4e 0)" -gt 8 ] && { dim_ok=1; break; }
 	sleep 0.1
 done
 [ -n "$dim_ok" ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
-	fail "the dimmed speaker is not 3c3c3c"; }
-echo "ok: the dimmed speaker is 3c3c3c"
+	fail "the dimmed speaker is not 4e4e4e"; }
+echo "ok: the dimmed speaker is 4e4e4e"
 do_input key Up         # must not crash
 pactl load-module module-null-sink sink_name=first \
 	sink_properties=device.description=First >/dev/null
@@ -930,12 +934,19 @@ wait_pixel "a last value too long to keep gives the default" $((S0 + 2)) "$ROW" 
 sc_quit
 rm "$XDG_CONFIG_HOME/mwc/mwmrc"
 
-# Text in the colours mwc gives its titles: foreground on the background,
-# activeForeground on the active colour, as in the selected volume.
-printf 'Mwm*foreground: #00ff00\nMwm*activeForeground: #ff00ff\n' \
+# The client palette's text: textForeground on the face, in the field and as its caret,
+# activeForeground on the active colour, as in the selected volume. Both read at 4.5:1
+# as they are.
+printf 'Mwm*textForeground: #00007f\nMwm*activeForeground: #ffccff\n' \
 	>"$XDG_CONFIG_HOME/mwc/mwmrc"
 sc_start
-status_has "the text takes Mwm*foreground" 00ff00
+status_has "the text takes Mwm*textForeground" 00007f
+do_input key 4
+wait_pixel "a digit opens the field" "$FIELD_X" "$FIELD_Y" f6f6f6
+check "the typed volume takes Mwm*textForeground" '[ "$(field_ink 00007f 0)" -gt 0 ]'
+check "and none of it is black" '[ "$(field_ink)" = 0 ]'
+do_input key Escape
+wait_pixel "Esc closes the field" "$FIELD_X" "$FIELD_Y" "$LIST"
 do_input move $((CX + FIELD_X)) $((CY + ROW))
 do_input click left
 field_has "a click selects the volume" "$SEL"
@@ -943,7 +954,7 @@ fg_ok=
 for ((i = 0; i < 30; i++)); do
 	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null &&
 		[ "$(build/pngtool count "$SHOT" $((CX + FIELD_M - 5)) $((CY + 10)) 10 \
-			$((BARH - 8)) ff00ff)" -gt 0 ] && { fg_ok=1; break; }
+			$((BARH - 8)) ffccff)" -gt 0 ] && { fg_ok=1; break; }
 	sleep 0.1
 done
 [ -n "$fg_ok" ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
@@ -953,9 +964,18 @@ do_input key Escape
 sc_quit
 rm "$XDG_CONFIG_HOME/mwc/mwmrc"
 
+# mwc's frames' colours leave the client alone: its face and text stay mtk's.
+printf 'Mwm*background: #ff0000\nMwm*foreground: #00ff00\n' >"$XDG_CONFIG_HOME/mwc/mwmrc"
+MWC_INACTIVE='#0000ff' sc_start
+wait_pixel "Mwm*background and MWC_INACTIVE leave the face" 1 1 "$BG"
+status_has "and Mwm*foreground the text" 000000 32
+sc_quit
+rm "$XDG_CONFIG_HOME/mwc/mwmrc"
+
 # On a mid grey the volume's text has no room to be dimmer and still read: muted, it is
 # in brackets instead, which the ink at the field's right end shows.
-MWC_INACTIVE='#505050' sc_start
+echo 'Mwm*basicBackground: #505050' >"$XDG_CONFIG_HOME/mwc/mwmrc"
+sc_start
 pactl set-sink-mute first 0
 check "the volume is shown on a mid grey" '[ "$(field_ink)" -gt 0 ]'
 ink_on=$(field_ink)
@@ -978,10 +998,12 @@ pactl set-sink-mute first 0
 sc_quit
 
 # An error stays readable on a dark background. No server here.
-MWC_INACTIVE='#202020' PULSE_SERVER=unix:$SMOKE_DIR/none sc_start
-wait_pixel "MWC_INACTIVE is the background" 1 1 202020
+echo 'Mwm*basicBackground: #202020' >"$XDG_CONFIG_HOME/mwc/mwmrc"
+PULSE_SERVER=unix:$SMOKE_DIR/none sc_start
+wait_pixel "Mwm*basicBackground is the background" 1 1 202020
 status_has "the error has a light colour there" ffa0a0
 sc_quit
+rm "$XDG_CONFIG_HOME/mwc/mwmrc"
 
 # ---- a scaled output ---------------------------------------------------------
 
