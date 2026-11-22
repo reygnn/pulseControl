@@ -21,6 +21,16 @@ volume goes to the old one until the release or the answer, then the window foll
 The window can be resized only from the keyboard (Alt+F8 in mwc), since it has no
 resize handles. The scale grows with the width.
 
+It starts 151 wide, digitalClock's width with its default formats and DejaVu Sans 10.
+digitalClock with another `CLOCK_FORMAT` or `CLOCK_DATE` is wider or narrower, and
+pulseControl doesn't follow. It is never narrower than a pixel per percent on the
+scale and a muted volume below it need.
+
+The info popup is as wide as its text when it opens; a longer one that comes while it
+is up is cut. It opens upwards from the window's top, which suits the dock at the
+bottom of the screen. Where there is room below, it opens downwards from there and
+covers the window while it is up.
+
 It draws at the integer scale the compositor asks for with wl_compositor 6. A
 fractional scale is drawn at the next integer and scaled down by the compositor; an
 older compositor never asks, and there the window stays at scale 1 and is blurred.

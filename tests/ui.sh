@@ -190,15 +190,21 @@ sc_start() {
 	W=$(($(get pulseControl w) - 6))
 	H=$(($(get pulseControl h) - 6))
 	BARH=$(((H - 16) / 2))
-	# In the window: the scale's inner x range and a row through it, below the
-	# middle so that the slider's groove doesn't matter.
-	S0=$((6 + BARH + 4 + 1))
-	S1=$(scale_end)
+	# In the window: the scale's inner x range, over the whole width, and a row
+	# through it, below the middle so that the slider's groove doesn't matter.
+	S0=7
+	S1=$((W - 8))
 	ROW=$((6 + BARH / 2 + 2))
-	# Inside the volume field, right of its text and above it, and its left end and
-	# middle: the text is centred.
-	FIELD_X=$((W - 6 - 3))
-	FIELD_Y=$((6 + 3))
+	# The row below: its top and a row through it, the middle of the speaker on the
+	# screen, and the i at the right end.
+	Y2=$((6 + BARH + 4))
+	ROW2=$((Y2 + BARH / 2 + 2))
+	BX=$((CX + 6 + BARH / 2)) BY=$((CY + Y2 + BARH / 2))
+	I0=$((W - 6 - BARH))
+	# Inside the volume field between them, right of its text and above it, and its
+	# left end and middle: the text is centred.
+	FIELD_X=$((W - 6 - BARH - 4 - 3))
+	FIELD_Y=$((Y2 + 3))
 	FIELD_L=$(field_left)
 	FIELD_M=$(((FIELD_L + FIELD_X) / 2))
 	echo "window ${W}x$H, scale x $S0..$S1, field x $FIELD_L..$FIELD_X"
@@ -231,25 +237,6 @@ field_has() {
 	fail "$1: no $2 in the field"
 }
 
-# Where the inside of the scale ends, in the window. The volume field beside it depends
-# on the font, so walk in from the right along the top bevels: first the field, then the
-# gap, then the scale.
-scale_end() {
-	local x y=$((CY + 6)) shot=$SMOKE_DIR/w.png
-	# Stderr: the caller captures stdout, and would swallow the message.
-	WAYLAND_DISPLAY=wayland-0 grim "$shot" 2>/dev/null || fail "no screenshot" >&2
-	for ((x = CX + W - 1; x > CX; x--)); do
-		[ "$(build/pngtool pixel "$shot" "$x" "$y")" != "$BG" ] && break
-	done
-	for (( ; x > CX; x--)); do
-		[ "$(build/pngtool pixel "$shot" "$x" "$y")" = "$BG" ] && break
-	done
-	for (( ; x > CX; x--)); do
-		[ "$(build/pngtool pixel "$shot" "$x" "$y")" != "$BG" ] && break
-	done
-	echo $((x - CX - 1))
-}
-
 # sc_exits <description>: it must end by itself, and with status 0.
 sc_exits() {
 	local i status
@@ -269,32 +256,68 @@ sc_quit() {
 	check "q closes the window" '[ -z "$(get pulseControl w)" ]'
 }
 
-# status_has <description> <rrggbb> [tol]: text in that colour in the status line, for
-# which any pixel fully inside a stroke will do; each channel off by at most tol, 0 if
-# not given.
-status_has() {
+# The info popup hangs from the window's top at the i's right end, to the right: the
+# test's screen has room there. Its text starts 13 in, the title 7 down, the name 28.
+PX() { echo $((CX + W - 6 + 13)); }
+
+# info_count <rrggbb> [tol] [width]: the pixels of that colour in the popup's text, each
+# channel off by at most tol, 0 if not given, in its first width columns, 150 if not.
+info_count() {
+	local shot=$SMOKE_DIR/s.png
+	WAYLAND_DISPLAY=wayland-0 grim "$shot" 2>/dev/null || fail "no screenshot" >&2
+	build/pngtool count "$shot" "$(PX)" $((WY + 7)) "${3:-150}" 38 "$1" "${2:-0}"
+}
+
+# info_has <description> <rrggbb> [tol] [width]: text in that colour in the popup, for
+# which any pixel fully inside a stroke will do.
+info_has() {
+	local i
+	for ((i = 0; i < 30; i++)); do
+		[ "$(info_count "$2" "${3:-0}" "${4:-150}")" -gt 0 ] &&
+			{ echo "ok: $1"; return 0; }
+		sleep 0.1
+	done
+	cp "$SMOKE_DIR/s.png" "$ERR_SHOT" 2>/dev/null
+	fail "$1: no $2 in the info popup"
+}
+
+# info_gone <description>: no text where the popup was.
+info_gone() {
+	local i
+	for ((i = 0; i < 30; i++)); do
+		[ "$(info_count 000000 120)" = 0 ] && { echo "ok: $1"; return 0; }
+		sleep 0.1
+	done
+	cp "$SMOKE_DIR/s.png" "$ERR_SHOT" 2>/dev/null
+	fail "$1: the info popup is still there"
+}
+
+# i_has <description> <rrggbb>: the i drawn in that colour. Without antialiasing, so
+# exact.
+i_has() {
 	local i shot=$SMOKE_DIR/s.png
 	for ((i = 0; i < 30; i++)); do
 		WAYLAND_DISPLAY=wayland-0 grim "$shot" 2>/dev/null || fail "no screenshot"
-		[ "$(build/pngtool count "$shot" $((CX + 12)) $((CY + H - 6 - BARH + 4)) \
-			98 $((BARH - 8)) "$2" "${3:-0}")" -gt 0 ] && { echo "ok: $1"; return 0; }
+		[ "$(build/pngtool count "$shot" $((CX + I0)) $((CY + Y2)) "$BARH" "$BARH" \
+			"$2" 0)" -gt 4 ] && { echo "ok: $1"; return 0; }
 		sleep 0.1
 	done
-	fail "$1: no $2 in the status line"
+	cp "$shot" "$ERR_SHOT" 2>/dev/null
+	fail "$1: the i is not $2"
 }
 
 sc_is_client() { pactl list short clients 2>/dev/null | grep -qw pulseControl; }
 
 # Where a percentage puts the middle of the slider, in the window.
-thumb_mid() { echo $((S0 + (S1 - S0 - 30) * $1 / 100 + 15)); }
+thumb_mid() { echo $((S0 + (S1 - S0 - 12) * $1 / 100 + 6)); }
 
 # shows <description> <percent>: the window has the volume, filled up to the slider
 # and empty behind it. Before input that depends on a volume another program set:
 # the server may have it before pulseControl does. 3 pixels beside the slider, so that
 # 96 and 100 differ.
 shows() {
-	wait_pixel "$1" $(($(thumb_mid "$2") - 18)) "$ROW" "$SEL"
-	wait_pixel "$1" $(($(thumb_mid "$2") + 18)) "$ROW" "$TROUGH"
+	wait_pixel "$1" $(($(thumb_mid "$2") - 9)) "$ROW" "$SEL"
+	wait_pixel "$1" $(($(thumb_mid "$2") + 9)) "$ROW" "$TROUGH"
 }
 
 # A compositor left stopped would hang the screenshot and the cleanup.
@@ -323,6 +346,11 @@ echo "ok: no server-side decoration"
 echo "ok: the font is DejaVu Sans 10, whatever SC_FONT says"
 grep -q 'not found' "$SC_LOG" && fail "it warns of a missing font: $(cat "$SC_LOG")"
 echo "ok: no warning with DejaVu Sans there"
+# As wide as digitalClock, and still a pixel per percent on the scale.
+[ "$(get pulseControl w)" = 151 ] || fail "the window is $(get pulseControl w) wide, not 151"
+echo "ok: as wide as digitalClock"
+[ $((S1 - S0 + 1 - 12)) -ge 100 ] || fail "the slider has $((S1 - S0 + 1 - 12)) pixels to go"
+echo "ok: the slider has a pixel per percent"
 # Its frame: a bevel of 2, then a line of the face, active while it is the active window.
 pixel_is "the frame is in the active colour" $((WX + 2)) $((CY + ROW)) "$SEL"
 # Another window, in the far corner, takes the keyboard, and gives it back.
@@ -334,9 +362,9 @@ check "another window takes the keyboard" \
 pixel_is "without it the frame is inactive" $((WX + 2)) $((CY + ROW)) "$BG"
 kill "$PID_thief" 2>/dev/null
 wait "$PID_thief" 2>/dev/null
-do_input move $((CX + 20)) $((CY + H - 10))
+do_input move $((CX + 2)) $((CY + ROW2))
 do_input click left
-check "a click on the status line gives the keyboard back" \
+check "a click on the face gives the keyboard back" \
 	"[ \"\$(get pulseControl kbfocus)\" = 1 ]"
 pixel_is "and the frame is active again" $((WX + 2)) $((CY + ROW)) "$SEL"
 # A layer surface that takes the keyboard, as a launcher does, leaves the window active
@@ -350,8 +378,8 @@ pixel_is "and so does its frame" $((WX + 2)) $((CY + ROW)) "$SEL"
 kill "$PID_layer" 2>/dev/null
 wait "$PID_layer" 2>/dev/null
 check "the keyboard comes back" "[ \"\$(get pulseControl kbfocus)\" = 1 ]"
-wait_pixel "the scale is filled up to the slider" $(($(thumb_mid 50) - 20)) "$ROW" "$SEL"
-wait_pixel "and empty behind it" $(($(thumb_mid 50) + 20)) "$ROW" "$TROUGH"
+wait_pixel "the scale is filled up to the slider" $(($(thumb_mid 50) - 9)) "$ROW" "$SEL"
+wait_pixel "and empty behind it" $(($(thumb_mid 50) + 9)) "$ROW" "$TROUGH"
 # The widgets have mwc's bevel of 1, the frame its 2: the fill starts right inside.
 wait_pixel "the scale's bevel is 1" "$S0" "$ROW" "$SEL"
 
@@ -500,7 +528,7 @@ start_vinput
 pactl set-sink-volume first 5%
 sc_start
 
-do_input move $((CX + FIELD_X)) $((CY + ROW))
+do_input move $((CX + FIELD_X)) $((CY + ROW2))
 do_input click left
 wait_pixel "a click opens the field" "$FIELD_X" "$FIELD_Y" f6f6f6
 do_input key Return
@@ -513,11 +541,11 @@ do_input key 3
 do_input key Return
 expect_vol "typing after the click sets it" first 33 33
 
-# Closed by a click on the status line, which sets nothing itself. A step after it
-# counts from 33, not from a 9 the click might have taken.
+# Closed by a click on the face, which sets nothing itself. A step after it counts
+# from 33, not from a 9 the click might have taken.
 do_input click left
 do_input key 9
-do_input move $((CX + 20)) $((CY + H - 10))
+do_input move $((CX + 2)) $((CY + ROW2))
 do_input click left
 wait_pixel "a click beside the field closes it" "$FIELD_X" "$FIELD_Y" "$LIST"
 do_input key Up
@@ -552,13 +580,13 @@ expect_vol "back at 50" first 50 50
 
 # The text on the active colour, mwc's blue: white, as Motif picks it and mwc's titles
 # have it. Counted in the middle of the selection, inside the field.
-do_input move $((CX + FIELD_X)) $((CY + ROW))
+do_input move $((CX + FIELD_X)) $((CY + ROW2))
 do_input click left
 field_has "a click selects the volume" "$SEL"
 ink_ok=
 for ((i = 0; i < 30; i++)); do
 	if WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null; then
-		set -- $((CX + FIELD_M - 5)) $((CY + 10)) 10 $((BARH - 8))
+		set -- $((CX + FIELD_M - 5)) $((CY + Y2 + 4)) 10 $((BARH - 8))
 		black=$(build/pngtool count "$SHOT" "$@" 000000)
 		white=$(build/pngtool count "$SHOT" "$@" ffffff)
 		[ "$white" -gt 0 ] && [ "$black" = 0 ] && { ink_ok=1; break; }
@@ -577,7 +605,7 @@ wait_pixel "Esc closes the field" "$FIELD_X" "$FIELD_Y" "$LIST"
 # within 8 so that the field's #f6f6f6 beside the selection is not.
 field_ink() {
 	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null &&
-		build/pngtool count "$SHOT" $((CX + FIELD_L)) $((CY + 10)) \
+		build/pngtool count "$SHOT" $((CX + FIELD_L)) $((CY + Y2 + 4)) \
 			$((FIELD_X - FIELD_L + 1)) $((BARH - 8)) "${1:-000000}" ${2:+"$2"}
 }
 # The first and last column of the field with ink in them, "l r", in the window.
@@ -585,7 +613,7 @@ ink_span() {
 	local x l= r=
 	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null || fail "no screenshot"
 	for ((x = FIELD_L; x <= FIELD_X; x++)); do
-		[ "$(build/pngtool count "$SHOT" $((CX + x)) $((CY + 10)) 1 $((BARH - 8)) \
+		[ "$(build/pngtool count "$SHOT" $((CX + x)) $((CY + Y2 + 4)) 1 $((BARH - 8)) \
 			000000)" -gt 0 ] || continue
 		l=${l:-$x}
 		r=$x
@@ -595,11 +623,11 @@ ink_span() {
 # span_ink <l> <r>: the ink between those columns.
 span_ink() {
 	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null || fail "no screenshot"
-	build/pngtool count "$SHOT" $((CX + $1)) $((CY + 10)) $(($2 - $1 + 1)) $((BARH - 8)) \
+	build/pngtool count "$SHOT" $((CX + $1)) $((CY + Y2 + 4)) $(($2 - $1 + 1)) $((BARH - 8)) \
 		000000
 }
 open_field() {
-	do_input move $((CX + FIELD_X)) $((CY + ROW))
+	do_input move $((CX + FIELD_X)) $((CY + ROW2))
 	do_input click left
 	field_has "$1" "$SEL"
 }
@@ -629,6 +657,15 @@ do_input key Escape
 pactl set-sink-volume first 50%
 shows "back at 50" 50
 
+# ---- the info popup -----------------------------------------------------------
+
+# As wide as its text: "Output" and "First" end well before 100, the root shows there.
+do_input key i
+info_has "i shows the output" 000000 32
+pixel_is "the popup is as wide as its text" $(($(PX) + 100)) $((WY + 20)) 5b7792
+do_input key Escape
+info_gone "and Esc closes it"
+
 # ---- mouse -------------------------------------------------------------------
 
 do_input move $((CX + S0 + 5)) $((CY + ROW))
@@ -638,8 +675,7 @@ do_input wheel 1
 do_input wheel 1
 expect_vol "the wheel down is quieter" first 45 45
 
-BX=$((CX + 6 + BARH / 2))
-do_input move "$BX" $((CY + 6 + BARH / 2))
+do_input move "$BX" "$BY"
 do_input click left
 expect_mute "the speaker mutes" first yes
 do_input click left
@@ -649,7 +685,7 @@ expect_mute "and unmutes" first no
 do_input down left
 do_input move $((CX + $(thumb_mid 45))) $((CY + ROW))
 do_input up left
-do_input move "$BX" $((CY + 6 + BARH / 2))
+do_input move "$BX" "$BY"
 do_input click left
 expect_mute "sliding off the speaker cancels the click, a click after it mutes" first yes
 do_input click left
@@ -657,7 +693,7 @@ expect_mute "unmuted" first no
 # Off and back before the release, as a Motif push button: it counts.
 do_input down left
 do_input move $((CX + $(thumb_mid 45))) $((CY + ROW))
-do_input move "$BX" $((CY + 6 + BARH / 2))
+do_input move "$BX" "$BY"
 do_input up left
 expect_mute "off the speaker and back, the release mutes" first yes
 do_input click left
@@ -685,7 +721,7 @@ expect_vol "the release leaves it there, a step goes on from it" first \
 pactl set-sink-volume first 40%
 expect_vol "changed by another program" first 40 40
 shows "and shown" 40
-do_input move $((CX + $(thumb_mid 40) + 12)) $((CY + ROW))
+do_input move $((CX + $(thumb_mid 40) + 4)) $((CY + ROW))
 do_input click left
 do_input key Up
 expect_vol "a click on the slider leaves the volume alone, a step goes on" first 45 45
@@ -694,15 +730,15 @@ shows "back at 40" 40
 
 # Grabbed away from its middle, it moves from where it is.
 do_input down left
-do_input move $((CX + $(thumb_mid 40) + 13)) $((CY + ROW))
+do_input move $((CX + $(thumb_mid 40) + 5)) $((CY + ROW))
 expect_near "a grabbed slider doesn't jump" first 40 40
 do_input up left
 
 # ---- what others do ----------------------------------------------------------
 
 pactl set-sink-volume first 90%
-wait_pixel "the scale follows another program" $(($(thumb_mid 90) - 20)) "$ROW" "$SEL"
-wait_pixel "and only that far" $(($(thumb_mid 90) + 20)) "$ROW" "$TROUGH"
+wait_pixel "the scale follows another program" $(($(thumb_mid 90) - 9)) "$ROW" "$SEL"
+wait_pixel "and only that far" $(($(thumb_mid 90) + 9)) "$ROW" "$TROUGH"
 
 # During a drag the window ignores others, but catches up with the release.
 do_input move $((CX + $(thumb_mid 90))) $((CY + ROW))
@@ -719,7 +755,7 @@ pactl set-sink-mute first 0
 
 # The balance survives steps, and a volume of zero in a drag.
 pactl set-sink-volume first 80% 40%
-do_input move "$BX" $((CY + 6 + BARH / 2))
+do_input move "$BX" "$BY"
 shows "an uneven volume shows its loudest channel" 80
 do_input key Up
 expect_near "a step keeps the balance" first 85 43
@@ -733,7 +769,7 @@ do_input up left
 
 # Above 100 %: shown, can go down, doesn't go up.
 pactl set-sink-volume first 130%
-wait_pixel "the slider stays inside the scale above 100 %" $((S1 - 5)) "$ROW" "$BG"
+wait_pixel "the slider stays inside the scale above 100 %" $((S1 - 3)) "$ROW" "$BG"
 # Up and a grab of the slider keep it; Down after them lowers it from 130.
 do_input key Up
 do_input move $((CX + $(thumb_mid 100))) $((CY + ROW))
@@ -761,7 +797,7 @@ expect_vol "steps in a row add up" first 45 45
 # ---- the default output changes ----------------------------------------------
 
 pactl set-default-sink second
-wait_pixel "the scale shows the new default" $(($(thumb_mid 45) - 20)) "$ROW" "$TROUGH"
+wait_pixel "the scale shows the new default" $(($(thumb_mid 45) - 9)) "$ROW" "$TROUGH"
 shows "at its volume" 10
 do_input key Up
 expect_vol "a step goes to the new default" second 15 15
@@ -769,13 +805,17 @@ expect_vol "and not to the old one" first 45 45
 pactl set-default-sink first
 shows "the old default is back" 45
 
-# A right-to-left name starts at the left of the status line, as any other.
+# A right-to-left name starts at the left of the info popup, as any other.
 RTL=$(pactl load-module module-null-sink sink_name=rtl \
 	sink_properties=device.description=שלום)
 pactl set-sink-volume rtl 20%
 pactl set-default-sink rtl
 shows "a sink with a right-to-left name" 20
-status_has "its name is at the left" 000000 32    # thin strokes, never quite black
+do_input key i
+info_has "its name is at the left" 000000 32 60     # thin strokes, never quite black
+do_input key Escape
+info_gone "Esc closes the popup"
+kill -0 "$SC_PID" 2>/dev/null || fail "Esc in the popup ended pulseControl"
 pactl set-default-sink first
 pactl unload-module "$RTL"
 shows "the old default is back again" 45
@@ -784,13 +824,18 @@ shows "the old default is back again" 45
 
 pactl unload-module module-null-sink
 wait_pixel "without a sink the scale is empty" $((S0 + 2)) "$ROW" "$TROUGH"
-status_has "the status line says so" 8a0303
+i_has "the i says so" 8a0303
+do_input move $((CX + I0 + 5)) "$BY"
+do_input click left
+info_has "and a click on it tells what" 8a0303
+do_input click left
+info_gone "a second click closes it"
 # The speaker is dimmed then, but still at 4.5:1 on the face: 4e4e4e as in
 # digitalClock. Drawn without antialiasing, so exact; the text has subpixel fringes.
 dim_ok=
 for ((i = 0; i < 30; i++)); do
 	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null &&
-		[ "$(build/pngtool count "$SHOT" $((CX + 6)) $((CY + 6)) "$BARH" "$BARH" \
+		[ "$(build/pngtool count "$SHOT" $((CX + 6)) $((CY + Y2)) "$BARH" "$BARH" \
 			4e4e4e 0)" -gt 8 ] && { dim_ok=1; break; }
 	sleep 0.1
 done
@@ -852,7 +897,7 @@ sc_start
 shows "at 40 before quitting" 40
 kill -STOP "$SC_PID"
 do_input key q
-do_input move $((CX + 6 + BARH / 2)) $((CY + 6 + BARH / 2))
+do_input move "$BX" "$BY"
 do_input click left
 kill -CONT "$SC_PID"
 sc_exits "q and a click in one batch"
@@ -940,20 +985,23 @@ rm "$XDG_CONFIG_HOME/mwc/mwmrc"
 printf 'Mwm*textForeground: #00007f\nMwm*activeForeground: #ffccff\n' \
 	>"$XDG_CONFIG_HOME/mwc/mwmrc"
 sc_start
-status_has "the text takes Mwm*textForeground" 00007f
+do_input key i
+info_has "the output's name takes Mwm*textForeground" 00007f
+do_input key Escape
+info_gone "the popup is closed"
 do_input key 4
 wait_pixel "a digit opens the field" "$FIELD_X" "$FIELD_Y" f6f6f6
 check "the typed volume takes Mwm*textForeground" '[ "$(field_ink 00007f 0)" -gt 0 ]'
 check "and none of it is black" '[ "$(field_ink)" = 0 ]'
 do_input key Escape
 wait_pixel "Esc closes the field" "$FIELD_X" "$FIELD_Y" "$LIST"
-do_input move $((CX + FIELD_X)) $((CY + ROW))
+do_input move $((CX + FIELD_X)) $((CY + ROW2))
 do_input click left
 field_has "a click selects the volume" "$SEL"
 fg_ok=
 for ((i = 0; i < 30; i++)); do
 	WAYLAND_DISPLAY=wayland-0 grim "$SHOT" 2>/dev/null &&
-		[ "$(build/pngtool count "$SHOT" $((CX + FIELD_M - 5)) $((CY + 10)) 10 \
+		[ "$(build/pngtool count "$SHOT" $((CX + FIELD_M - 5)) $((CY + Y2 + 4)) 10 \
 			$((BARH - 8)) ffccff)" -gt 0 ] && { fg_ok=1; break; }
 	sleep 0.1
 done
@@ -968,7 +1016,9 @@ rm "$XDG_CONFIG_HOME/mwc/mwmrc"
 printf 'Mwm*background: #ff0000\nMwm*foreground: #00ff00\n' >"$XDG_CONFIG_HOME/mwc/mwmrc"
 MWC_INACTIVE='#0000ff' sc_start
 wait_pixel "Mwm*background and MWC_INACTIVE leave the face" 1 1 "$BG"
-status_has "and Mwm*foreground the text" 000000 32
+do_input key i
+info_has "and Mwm*foreground the text" 000000 32
+do_input key Escape
 sc_quit
 rm "$XDG_CONFIG_HOME/mwc/mwmrc"
 
@@ -1001,7 +1051,10 @@ sc_quit
 echo 'Mwm*basicBackground: #202020' >"$XDG_CONFIG_HOME/mwc/mwmrc"
 PULSE_SERVER=unix:$SMOKE_DIR/none sc_start
 wait_pixel "Mwm*basicBackground is the background" 1 1 202020
-status_has "the error has a light colour there" ffa0a0
+i_has "the error has a light colour there" ffa0a0
+do_input key i
+info_has "also in the popup" ffa0a0 32
+do_input key Escape
 sc_quit
 rm "$XDG_CONFIG_HOME/mwc/mwmrc"
 

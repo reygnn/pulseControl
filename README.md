@@ -37,14 +37,16 @@ and `.dirty` for changes not committed.
 
 ## Look
 
-A mute button with a speaker, the scale, the volume in percent, and a status line with
-the name of the output. The scale fills in the active colour up to the slider; muted,
-it stays empty, and the volume is shown in brackets. Only mwm's thin border, in the
+The scale on top, below it a mute button with a speaker, the volume in percent and an
+i. The window is as wide as digitalClock, so that the two line up in the dock. The
+scale fills in the active colour up to the slider; muted, it stays empty, and the
+volume is shown in brackets. The i opens a popup with the name of the output, or what
+is wrong; while something is wrong, the i is in the error colour. Only mwm's thin border, in the
 active colour while pulseControl is the active window. The colours are mwc's, see
 Configuration.
 
 It follows the default output and changes made by other programs. Without a sound
-server the status line says so, and pulseControl tries again every second.
+server the i says so, and pulseControl tries again every second.
 
 
 ## Keys
@@ -56,10 +58,13 @@ server the status line says so, and pulseControl tries again every second.
 | click or drag on the scale | set the volume |
 | digits, or a click on the percentage | type the volume |
 | m, Space, a click on the speaker | mute on and off |
+| i, a click on the i | the output's name, or what is wrong |
 | the keyboard's volume keys | louder, quieter, mute |
 | Esc, q, Ctrl+Q, Ctrl+W | quit |
 
-In the field Return takes the typed volume and Esc cancels it. With Alt, Super or Ctrl
+In the field Return takes the typed volume and Esc cancels it. The popup closes with
+Esc, Return, Space, i or a click; while it is up, only the volume keys and Ctrl+Q and
+Ctrl+W act besides. With Alt, Super or Ctrl
 held no key acts, except Ctrl+Q, Ctrl+W and the volume keys, which also act in the
 field. The balance between the channels is kept.
 

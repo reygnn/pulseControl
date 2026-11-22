@@ -12,9 +12,14 @@
  * Keys:   Up / Right / +  louder        Down / Left / -  quieter
  *         m / Space       mute          Esc / q / Ctrl+Q / Ctrl+W  quit
  *         digits          type the volume, Return takes it, Esc doesn't
+ *         i               the output's name, or what is wrong
  *         also the volume keys of the keyboard, while the window has the focus
  * Mouse:  click or drag the scale, wheel anywhere, click the speaker to mute,
- *         click the percentage to type there.
+ *         click the percentage to type there, click the i for the output.
+ *
+ * It is as wide as digitalClock, so that the two stack in mwc's dock: the scale on
+ * top, below it the speaker, the volume and the i. The output's name and the errors
+ * are in a popup of the i, which shows them in the error colour while one is up.
  *
  * The scale ends at 100 %. A volume above that (set by another program) is
  * shown and can be lowered, but pulseControl does not raise anything past 100 %.
@@ -47,7 +52,10 @@
 #define PAD 6
 #define FRAME MTK_BORDER        /* mwm's border without resize handles */
 #define FIELD_PAD 8     /* around the text in the volume field */
-#define THUMB 30        /* width of the scale's slider */
+#define THUMB 12        /* width of the scale's slider */
+#define WIDTH 151       /* digitalClock's, with its formats and DejaVu Sans 10 */
+#define GAP 4           /* between the buttons and the volume field */
+#define POP_PAD 12      /* around the popup's text */
 #define STEP 5          /* percent per key press or wheel step */
 #define RETRY_MS 1000   /* between attempts to reach the sound server */
 #ifndef MAX            /* glib has them too */
@@ -93,7 +101,7 @@ static struct mtk *m;
 static struct mtk_window *win;
 static int ptr_x, ptr_y, ptr_old_x;
 
-static int W = 320, H, min_w, min_h;
+static int W = WIDTH, H, min_w, min_h;
 static int activated;           /* the active window: the active frame */
 static struct mtk_theme theme;
 static struct palette pal;
@@ -101,12 +109,17 @@ static cairo_t *cr;             /* what fill, bevel and text draw on */
 static PangoLayout *plo;
 static int font_asc, font_desc;
 static int barh;
-static struct rect r_btn, r_scale, r_pct, r_status;
+static struct rect r_btn, r_scale, r_pct, r_info;
+/* The info popup, up while info is set. */
+static struct mtk_window *info;
+static int info_w, info_h;
 
 static void redraw(void)
 {
 	if (win)
 		mtk_window_redraw(win);
+	if (info)
+		mtk_window_redraw(info);
 }
 
 static void theme_init(void)
@@ -337,23 +350,22 @@ static void text(uint32_t c, int x, int y, int h, int maxw, const char *s)
 	pango_layout_set_ellipsize(plo, PANGO_ELLIPSIZE_NONE);
 }
 
+/* The volume field's least width: room for a muted volume, in brackets. */
+static int pct_min(void)
+{
+	return textw("(100 %)") + 2 * BEV + FIELD_PAD;
+}
+
+/* The scale over the whole width, and below it the speaker, the volume field and
+ * the i, the field taking what the buttons leave. */
 static void layout(void)
 {
-	char s[32];
-	/* Room for a muted volume, in brackets. */
-	int pw = textw("(100 %)");
-	/* Only something unusual is wider, such as a volume of 1500 %. */
-	if (sink_state == SINK_OK) {
-		snprintf(s, sizeof s, "(%d %%)", sink_pct);
-		pw = MAX(pw, textw(s));
-	}
-	pw += 2 * BEV + FIELD_PAD;
 	int in = FRAME + PAD;   /* everything sits inside the frame */
-	r_btn = (struct rect){ in, in, barh, barh };
-	r_pct = (struct rect){ W - in - pw, in, pw, barh };
-	r_scale = (struct rect){ in + barh + 4, in,
-		W - 2 * in - barh - pw - 12, barh };
-	r_status = (struct rect){ in, H - in - barh, W - 2 * in, barh };
+	int y2 = H - in - barh;
+	r_scale = (struct rect){ in, in, W - 2 * in, barh };
+	r_btn = (struct rect){ in, y2, barh, barh };
+	r_info = (struct rect){ W - in - barh, y2, barh, barh };
+	r_pct = (struct rect){ in + barh + GAP, y2, W - 2 * in - 2 * barh - 2 * GAP, barh };
 }
 
 static int scale_travel(void)
@@ -396,6 +408,44 @@ static void draw_speaker(struct rect r, int muted, int off)
 		fill(sink_state == SINK_OK ? pal.fg : pal.dim, wx + 2, cy - a, 1,
 			2 * a + 1);
 	}
+}
+
+/* What the i stands for: the output, or what keeps it away, in its colour. */
+static const char *info_text(uint32_t *c, const char **detail)
+{
+	*detail = "";
+	if (sink_state == SINK_OK) {
+		*c = pal.fg;
+		*detail = sink_desc;
+		return "Output";
+	}
+	if (sink_state == SINK_NONE) {
+		*c = pal.err;
+		*detail = "the sound server has none";
+		return "No output device";
+	}
+	if ((!ctx || pa_context_get_state(ctx) != PA_CONTEXT_READY) && retry_at) {
+		*c = pal.err;
+		*detail = "trying again every second";
+		return "No sound server";
+	}
+	*c = pal.dim;
+	return "Connecting ...";
+}
+
+/* An i, drawn as the speaker is: crisp at any scale, and in the colour of what it
+ * has to say. */
+static void draw_info(struct rect r, int off)
+{
+	const char *d;
+	uint32_t c;
+	info_text(&c, &d);
+	int a = MAX(r.h / 13, 1), cx = r.x + r.w / 2 - a / 2 + off;
+	int top = r.y + (r.h - 6 * a) / 2 + off;
+	fill(c, cx, top, a, a);                         /* the dot */
+	fill(c, cx - a, top + 2 * a, 2 * a, a);         /* the stem, with serifs */
+	fill(c, cx, top + 2 * a, a, 4 * a);
+	fill(c, cx - a, top + 5 * a, 3 * a, a);
 }
 
 static int in(struct rect r, int x, int y)
@@ -479,16 +529,112 @@ static void paint(struct mtk_window *w, cairo_t *c, int width, int height, void 
 		text(pal.list_fg, x, r_pct.y, r_pct.h, fw, s);
 	}
 
-	/* status line */
-	bevel(r_status, 0);
-	int sx = r_status.x + BEV + 4, sw = r_status.w - 2 * BEV - 8;
-	if (ok)
-		text(pal.fg, sx, r_status.y, r_status.h, sw, sink_desc);
-	else if (sink_state == SINK_NONE)
-		text(pal.err, sx, r_status.y, r_status.h, sw, "no output device");
-	else if (!ctx || pa_context_get_state(ctx) != PA_CONTEXT_READY)
-		text(retry_at ? pal.err : pal.dim, sx, r_status.y, r_status.h, sw,
-			retry_at ? "no sound server" : "connecting ...");
+	/* the i: stays in while its popup is up */
+	bevel(r_info, !info);
+	draw_info(r_info, !!info);
+}
+
+/* ---- the info popup ----------------------------------------------------- */
+
+static void info_paint(struct mtk_window *w, cairo_t *c, int width, int height,
+	void *data)
+{
+	const char *detail;
+	uint32_t tc;
+	cr = c;
+	pango_cairo_update_layout(cr, plo);
+	const char *title = info_text(&tc, &detail);
+	int lh = font_asc + font_desc, tw = width - 2 * (BEV + POP_PAD);
+	fill(pal.bg, 0, 0, width, height);
+	bevel((struct rect){ 0, 0, width, height }, 1);
+	/* The name is what counts, an error what is wrong. */
+	int ok = sink_state == SINK_OK;
+	text(ok ? pal.dim : tc, BEV + POP_PAD, BEV + POP_PAD / 2, lh, tw, title);
+	text(ok ? pal.fg : pal.dim, BEV + POP_PAD, BEV + POP_PAD / 2 + lh + 4, lh, tw,
+		detail);
+}
+
+static void info_close(void)
+{
+	if (!info)
+		return;
+	mtk_window_destroy(info);
+	info = NULL;
+	redraw();
+}
+
+/* The compositor ended it: a click on another client. */
+static void info_done(struct mtk_window *w, void *data)
+{
+	info_close();
+}
+
+static void key_action(xkb_keysym_t ks, unsigned mods);
+static xkb_keysym_t key_sym(const struct mtk_key *k);
+static int plain_key(unsigned mods);
+static void edit_cancel(void);
+
+/* It has the keys while it is up: these close it, the volume keys and Ctrl's
+ * shortcuts keep their meaning, anything else waits for it to go. */
+static void info_key(struct mtk_window *w, const struct mtk_key *k, void *data)
+{
+	xkb_keysym_t ks = key_sym(k);
+	switch (ks) {
+	case XKB_KEY_Escape: case XKB_KEY_Return: case XKB_KEY_KP_Enter:
+	case XKB_KEY_space: case XKB_KEY_i: case XKB_KEY_I:
+		if (plain_key(k->mods))
+			info_close();
+		return;
+	case XKB_KEY_XF86AudioRaiseVolume: case XKB_KEY_XF86AudioLowerVolume:
+	case XKB_KEY_XF86AudioMute:
+		key_action(ks, k->mods);
+		return;
+	}
+	if (k->mods & MTK_MOD_CTRL)
+		key_action(ks, k->mods);
+}
+
+static int info_key_repeats(struct mtk_window *w, const struct mtk_key *k, void *data)
+{
+	xkb_keysym_t ks = key_sym(k);
+	return ks == XKB_KEY_XF86AudioRaiseVolume || ks == XKB_KEY_XF86AudioLowerVolume;
+}
+
+/* A click on it closes it, as one beside it does. */
+static void info_pointer(struct mtk_window *w, const struct mtk_pointer *p, void *data)
+{
+	if (p->kind == MTK_PRESS)
+		info_close();
+}
+
+static const struct mtk_window_listener info_listener = {
+	.paint = info_paint,
+	.close = info_done,
+	.key = info_key,
+	.key_repeats = info_key_repeats,
+	.pointer = info_pointer,
+};
+
+/* Above the window when it is at the bottom of the screen, as in mwc's dock, else
+ * over it, its right end at the i's, as wide as what it says now: mtk can't resize
+ * a popup, so a longer text that comes while it is up is cut. serial: the press or
+ * the key that opens it, for its grab. */
+static void info_open(uint32_t serial)
+{
+	if (info || !win)
+		return;
+	const char *detail;
+	uint32_t c;
+	int tw = textw(info_text(&c, &detail));
+	tw = MAX(tw, textw(detail));
+	info_w = 2 * (BEV + POP_PAD) + MIN(tw, 480);
+	info_h = 2 * BEV + POP_PAD + 2 * (font_asc + font_desc) + 4;
+	edit_cancel();
+	info = mtk_popup_new(win, &(struct mtk_popup_config){
+		.x = r_info.x + r_info.w, .y = 0, .width = info_w, .height = info_h,
+		.grab = 1, .serial = serial,
+	}, &info_listener, NULL);
+	redraw();
 }
 
 static void scale_to(int x)
@@ -635,6 +781,9 @@ static void key_action(xkb_keysym_t ks, unsigned mods)
 	case XKB_KEY_m: case XKB_KEY_M: case XKB_KEY_space:
 		toggle_mute();
 		break;
+	case XKB_KEY_i: case XKB_KEY_I:
+		info_open(mtk_serial(m));
+		break;
 	case XKB_KEY_q: case XKB_KEY_Q: case XKB_KEY_Escape:
 		quitting = 1;
 		break;
@@ -702,7 +851,7 @@ static void ptr_motion(void)
 		redraw();
 }
 
-static void ptr_button(uint32_t code, int pressed)
+static void ptr_button(uint32_t code, int pressed, uint32_t serial)
 {
 	if (code != BTN_LEFT)
 		return;
@@ -716,6 +865,15 @@ static void ptr_button(uint32_t code, int pressed)
 			if (take)
 				toggle_mute();
 		}
+		return;
+	}
+	/* Open or not, the i answers at once, as a menu's button: it has to tell what is
+	 * wrong, also while nothing else works. */
+	if (in(r_info, ptr_x, ptr_y)) {
+		if (info)
+			info_close();
+		else
+			info_open(serial);
 		return;
 	}
 	if (sink_state != SINK_OK)
@@ -760,7 +918,7 @@ static void pointer(struct mtk_window *w, const struct mtk_pointer *p, void *dat
 		break;
 	case MTK_PRESS:
 	case MTK_RELEASE:
-		ptr_button(p->button, p->kind == MTK_PRESS);
+		ptr_button(p->button, p->kind == MTK_PRESS, p->serial);
 		break;
 	case MTK_SCROLL:
 		if (p->steps_y && !dragging) {
@@ -859,9 +1017,9 @@ int main(int argc, char **argv)
 	if (!(m = mtk_open(&(struct mtk_config){ .name = "pulseControl" })))
 		return 1;
 	theme_init();
-	/* Room for all of it with the font in use, and a pixel per percent. */
-	min_w = MAX(220, 2 * (FRAME + PAD) + barh + textw("(100 %)") + 2 * BEV + FIELD_PAD +
-		12 + 2 * BEV + THUMB + 100);
+	/* Room for a pixel per percent on the scale and a muted volume below it. */
+	min_w = 2 * (FRAME + PAD) + MAX(2 * BEV + THUMB + 100,
+		2 * barh + 2 * GAP + pct_min());
 	W = MAX(W, min_w);
 	win = mtk_window_new(m, &(struct mtk_window_config){
 		.width = W, .height = H, .min_width = min_w, .min_height = min_h,
