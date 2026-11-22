@@ -285,6 +285,9 @@ static void check_lists(const struct mtk_theme *t)
 	CHECK_INT(t->field.bg, 0xf6f6f6);
 	CHECK(mtk_contrast_ratio(t->field.bg, t->field.fg) >= 4.5f);
 	CHECK_INT(t->field.bot, mtk_shade(0xf6f6f6, 0).bot);
+	CHECK_INT(t->urgent.bg, mtk_mix(t->inactive.bg, 0xffa000, 0.7f));
+	CHECK_INT(t->urgent.fg, mtk_best_contrast(t->urgent.bg));
+	CHECK_INT(t->urgent.top, mtk_shade(t->urgent.bg, 0).top);
 	CHECK_INT(t->trough, mtk_mix(t->inactive.bg, 0x000000, 0.12f));
 	CHECK_INT(t->folder, 0xc9a85c);
 }
@@ -303,6 +306,8 @@ TEST(lists)
 	CHECK_INT(t.select.bg, 0x2e5a8c);       /* far enough as it is */
 	CHECK_INT(t.select.fg, 0xffffff);
 	CHECK_INT(t.field.fg, 0x000000);
+	CHECK_INT(t.urgent.bg, 0xedab3b);
+	CHECK_INT(t.urgent.fg, 0x000000);
 	CHECK_INT(t.trough, 0xacacac);
 
 	/* IRIX's Base: #c6c1aa on its list #c4c4c4 has 1.04:1, moved. */
@@ -424,6 +429,7 @@ TEST(err)
 		m.active = mtk_shade(0xc6c1aa, 0x000000);
 		mtk_theme_lists(&m);
 		CHECK(mtk_contrast_ratio(bg, m.err) >= 4.5f);
+		CHECK(mtk_contrast_ratio(m.urgent.bg, m.urgent.fg) >= 4.5f);
 		CHECK_INT(m.dim, mtk_dimmed(bg, m.inactive.fg));
 	}
 }

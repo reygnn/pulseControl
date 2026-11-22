@@ -106,7 +106,7 @@ static uint32_t setting(const char *env, const char *res, uint32_t def)
 	return def;
 }
 
-/* A list and the row selected on it, a field, a trough and a folder, faces of the
+/* A list and the row selected on it, a field, urgent, a trough and a folder, faces of the
  * clients' own, and the dimmed
  * and the error text on the window. The list is lighter
  * than the window; the active colour, as mwc's titles have it, often lands on its
@@ -121,6 +121,8 @@ void mtk_theme_lists(struct mtk_theme *t)
 	t->list = mtk_shade(list, chosen ? mtk_readable(list, fg, lbest) : lbest);
 	uint32_t field = 0xf6f6f6, fbest = mtk_best_contrast(field);
 	t->field = mtk_shade(field, chosen ? mtk_readable(field, fg, fbest) : fbest);
+	uint32_t urgent = mtk_mix(bg, 0xffa000, 0.7f);
+	t->urgent = mtk_shade(urgent, mtk_best_contrast(urgent));
 	t->trough = mtk_mix(bg, 0x000000, 0.12f);
 	t->folder = 0xc9a85c;
 	uint32_t sel = mtk_apart(list, t->active.bg, MTK_SELECT_CONTRAST);

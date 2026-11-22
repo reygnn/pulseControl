@@ -38,7 +38,9 @@ its colours; its armed menu item stands out by its bevel, not by colour.
 
 A field to type in is `theme.field`, `#f6f6f6` on every palette, its text as on the
 list. `theme.trough` is a scrollbar's trough, `inactive` 12 % towards black, and
-`theme.folder`, `#c9a85c`, a folder icon's face. A client draws with these and sets
+`theme.folder`, `#c9a85c`, a folder icon's face. `theme.urgent` is what wants
+attention, as a desktop mwc marks urgent: `inactive` 70 % towards amber `#ffa000`,
+with black or white text. A client draws with these and sets
 no colours of its own.
 
 On the window `theme.dim` is dimmed text and `theme.err` error text: a dark red, or a

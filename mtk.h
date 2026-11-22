@@ -17,7 +17,7 @@
 #include <xkbcommon/xkbcommon.h>
 #include <xkbcommon/xkbcommon-compose.h>
 
-#define MTK_VERSION "0.14.0"
+#define MTK_VERSION "0.15.0"
 
 /* ---- colours (color.c) ---------------------------------------------------- */
 
@@ -97,6 +97,10 @@ struct mtk_theme {
 	/* A field to type in, #f6f6f6, its text as on list: one face on every palette,
 	 * as the clients had it. */
 	struct mtk_shade field;
+	/* Something that wants attention, as an urgent desktop: inactive.bg 70 %
+	 * towards amber #ffa000, its text the better of black and white. mwc has
+	 * the state, not a colour. */
+	struct mtk_shade urgent;
 	uint32_t trough;                /* a scrollbar's, inactive.bg 12 % towards black */
 	uint32_t folder;                /* a folder icon's face, #c9a85c */
 	int has_fg, has_active_fg;      /* textForeground, activeForeground set */
@@ -108,7 +112,7 @@ struct mtk_theme {
 
 void mtk_theme_load(struct mtk_theme *t);
 
-/* list, select, field, trough, folder, dim and err from inactive, active and
+/* list, select, field, urgent, trough, folder, dim and err from inactive, active and
  * has_fg, as
  * mtk_theme_load() sets them: for a theme a client makes of its own, in its tests. */
 void mtk_theme_lists(struct mtk_theme *t);
