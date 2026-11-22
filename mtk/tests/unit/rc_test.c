@@ -142,99 +142,80 @@ TEST(theme)
 	setenv("XDG_CONFIG_HOME", dir, 1);
 	rc(dir, "");
 	mtk_theme_load(&t);
-	/* mwc's defaults, IRIX's Base scheme, with Motif's shadows */
-	CHECK_INT(t.inactive.bg, 0xaaaaaa);
-	CHECK_INT(t.inactive.top, 0xdadada);
-	CHECK_INT(t.inactive.bot, 0x5a5a5a);
-	CHECK_INT(t.active.bg, 0xc6c1aa);
-	CHECK_INT(t.active.top, 0xe7e5db);
-	CHECK_INT(t.active.bot, 0x6b685c);
-	CHECK_INT(t.active.fg, 0x000000);       /* at 74 %, Motif's black */
+	/* mwc's defaults: its client palette and its blue, with Motif's shadows */
+	CHECK_INT(t.inactive.bg, 0xc4c4c4);
+	CHECK_INT(t.inactive.fg, 0x000000);
+	CHECK_INT(t.inactive.top, 0xe6e6e6);
+	CHECK_INT(t.inactive.bot, 0x6c6c6c);
+	CHECK_INT(t.active.bg, 0x2e5a8c);
+	CHECK_INT(t.active.top, 0x9db2c9);
+	CHECK_INT(t.active.bot, 0x152a42);
+	CHECK_INT(t.active.fg, 0xffffff);       /* Motif's white */
 	CHECK(!t.has_fg && !t.has_active_fg);
-	/* The built-in grey takes black, where Motif gives white at 67 %. */
-	CHECK_INT(t.inactive.fg, 0x000000);
-	CHECK_INT(t.dim, 0x3c3c3c);
-	/* A grey that is set, the same one too, gets Motif's white; so does one from
-	 * the environment. One that is no colour counts as not set. */
-	rc(dir, "Mwm*background: #aaaaaa\n");
-	mtk_theme_load(&t);
-	CHECK_INT(t.inactive.fg, 0xffffff);
-	rc(dir, "");
-	setenv("MWC_INACTIVE", "#aaaaaa", 1);
-	mtk_theme_load(&t);
-	CHECK_INT(t.inactive.fg, 0xffffff);
-	unsetenv("MWC_INACTIVE");
-	rc(dir, "Mwm*background: nonsense\n");
-	mtk_theme_load(&t);
-	CHECK(t.inactive.bg == 0xaaaaaa && t.inactive.fg == 0x000000);
-	rc(dir, "Mwm*foreground: #ffffff\n");
-	mtk_theme_load(&t);
-	CHECK_INT(t.inactive.fg, 0xffffff);
-	rc(dir, "Mwm*activeBackground: #8c8c8c\n");
-	mtk_theme_load(&t);
-	CHECK_INT(t.inactive.fg, 0x000000);
+	CHECK_INT(t.dim, mtk_dimmed(0xc4c4c4, 0x000000));
 
-	rc(dir, "Mwm*background: #102030\nMwm*activeBackground: gold\n"
-	   "Mwm*foreground: white\nMwm*activeForeground: rgb:1/2/3\n");
+	/* The frames' grey and title text are mwc's alone, set or from the
+	 * environment. */
+	rc(dir, "Mwm*background: #102030\nMwm*foreground: #ffffff\n");
+	setenv("MWC_INACTIVE", "#405060", 1);
+	mtk_theme_load(&t);
+	unsetenv("MWC_INACTIVE");
+	CHECK(t.inactive.bg == 0xc4c4c4 && t.inactive.fg == 0x000000 && !t.has_fg);
+
+	rc(dir, "Mwm*basicBackground: #102030\nMwm*activeBackground: gold\n"
+	   "Mwm*textForeground: white\nMwm*activeForeground: rgb:1/2/3\n");
 	mtk_theme_load(&t);
 	CHECK_INT(t.inactive.bg, 0x102030);
+	CHECK_INT(t.inactive.top, mtk_shade(0x102030, 0).top);
 	CHECK_INT(t.active.bg, 0xffd700);
 	CHECK(t.has_fg && t.has_active_fg);
 	CHECK_INT(t.inactive.fg, 0xffffff);
 	CHECK_INT(t.active.fg, 0x112233);
 	CHECK_INT(t.active.top, mtk_shade(0xffd700, 0).top);
 
-	/* Text as Motif picks it, where WCAG would take black. */
-	rc(dir, "Mwm*background: #7387ad\n");
-	mtk_theme_load(&t);
-	CHECK_INT(t.inactive.fg, 0xffffff);
-
 	/* The environment first; one that is no colour is passed over. */
 	setenv("MWC_ACTIVE", "#b24d7a", 1);
-	setenv("MWC_INACTIVE", "no colour", 1);
-	rc(dir, "Mwm*background: #102030\nMwm*foreground: nonsense\n");
+	rc(dir, "Mwm*activeBackground: #102030\n");
 	mtk_theme_load(&t);
 	CHECK_INT(t.active.bg, 0xb24d7a);
-	CHECK_INT(t.inactive.bg, 0x102030);
-	CHECK(!t.has_fg);
-	CHECK_INT(t.inactive.fg, 0xffffff);
+	setenv("MWC_ACTIVE", "no colour", 1);
+	mtk_theme_load(&t);
+	CHECK_INT(t.active.bg, 0x102030);
+	rc(dir, "Mwm*activeBackground: nonsense\n");
+	mtk_theme_load(&t);
+	CHECK_INT(t.active.bg, 0x2e5a8c);
 	unsetenv("MWC_ACTIVE");
-	unsetenv("MWC_INACTIVE");
 
 	/* As mwc hands a colour to Motif's rules: the 8 bits shown, each channel's
 	 * 16 cut to the high byte. Rounded, or kept at 16, these would land on the
 	 * other side of a threshold. */
-	rc(dir, "Mwm*background: rgb:3380/3380/3380\n");     /* 33, dark below 20 % */
+	rc(dir, "Mwm*basicBackground: rgb:3380/3380/3380\n");        /* 33, dark below 20 % */
 	mtk_theme_load(&t);
 	CHECK_INT(t.inactive.bg, 0x333333);
 	CHECK(t.inactive.bot >> 16 < 0x33);             /* medium: darker */
-	rc(dir, "Mwm*background: rgb:edf8/edf8/edf8\n");     /* ed, not above 93 % */
+	rc(dir, "Mwm*basicBackground: rgb:edf8/edf8/edf8\n");        /* ed, not above 93 % */
 	mtk_theme_load(&t);
 	CHECK_INT(t.inactive.bg, 0xededed);
 	CHECK(t.inactive.top >> 16 > 0xed);             /* medium: lighter */
-	rc(dir, "Mwm*background: #b310b310b310\n");          /* b3, above 70 % */
+	rc(dir, "Mwm*basicBackground: #b310b310b310\n");             /* b3 */
 	mtk_theme_load(&t);
 	CHECK_INT(t.inactive.bg, 0xb3b3b3);
-	CHECK_INT(t.inactive.fg, 0x000000);
 }
 
-/* IRIX's client palette: basicBackground and textForeground for the tools, the frame
- * colours for mwc; the text has 4.5:1 where the palette or Motif's rule has less. */
+/* IRIX's client palette: basicBackground and textForeground for the tools; the text
+ * has 4.5:1 where the palette or Motif's rule has less. */
 TEST(palette)
 {
 	struct mtk_theme t;
 	unsetenv("MWC_INACTIVE");
 	unsetenv("MWC_ACTIVE");
 	setenv("XDG_CONFIG_HOME", dir, 1);
-	rc(dir, "Mwm*background: #8c8c8c\n");
-	mtk_theme_load(&t);
-	CHECK(!t.palette);
 
 	/* Buckingham: Motif's white on the frames' greys has 3.4:1 and 3.0:1. */
 	rc(dir, "Mwm*activeBackground: #9991a6\nMwm*background: #8c8c8c\n"
 	   "Mwm*basicBackground: #795f78\nMwm*textForeground: #fffffe\n");
 	mtk_theme_load(&t);
-	CHECK(t.palette && !t.has_fg && !t.has_active_fg);
+	CHECK(t.has_fg && !t.has_active_fg);
 	CHECK_INT(t.inactive.bg, 0x795f78);
 	CHECK_INT(t.inactive.fg, 0xfffffe);             /* 5.6:1, as the palette has it */
 	CHECK_INT(t.inactive.top, mtk_shade(0x795f78, 0).top);
@@ -244,15 +225,26 @@ TEST(palette)
 	CHECK(mtk_contrast_ratio(t.inactive.bg, t.dim) >= 4.5f);
 	CHECK_INT(t.dim, mtk_dimmed(0x795f78, 0xfffffe));       /* on the palette's face */
 
-	/* Without textForeground black or white; foreground is the frames' alone. */
+	/* Without textForeground black or white, not COLOR_TEXT. */
 	rc(dir, "Mwm*basicBackground: #d9d9d9\nMwm*foreground: #ffffff\n");
 	mtk_theme_load(&t);
-	CHECK(t.palette && !t.has_fg);
+	CHECK(!t.has_fg);
 	CHECK_INT(t.inactive.fg, 0x000000);
+	rc(dir, "Mwm*basicBackground: #303030\n");
+	mtk_theme_load(&t);
+	CHECK_INT(t.inactive.fg, 0xffffff);
 	/* ... the better of them, where Motif's rule would take white at 3.4:1. */
 	rc(dir, "Mwm*basicBackground: #8c8c8c\n");
 	mtk_theme_load(&t);
 	CHECK_INT(t.inactive.fg, 0x000000);
+	/* textForeground alone, on the built-in face, as far as it reads. */
+	rc(dir, "Mwm*textForeground: #202080\n");
+	mtk_theme_load(&t);
+	CHECK(t.inactive.bg == 0xc4c4c4 && t.inactive.fg == 0x202080);
+	rc(dir, "Mwm*textForeground: #ffffff\n");
+	mtk_theme_load(&t);
+	CHECK(t.inactive.fg != 0xffffff);
+	CHECK(mtk_contrast_ratio(0xc4c4c4, t.inactive.fg) >= 4.5f);
 
 	/* Arizona's palette text has 3.8:1: moved as far as 4.5:1 needs. */
 	rc(dir, "Mwm*basicBackground: #868373\nMwm*textForeground: #ffffff\n");
@@ -274,10 +266,10 @@ TEST(palette)
 	/* One that is no colour counts as not set, as everywhere. */
 	rc(dir, "Mwm*basicBackground: nonsense\nMwm*background: #102030\n");
 	mtk_theme_load(&t);
-	CHECK(!t.palette);
-	CHECK_INT(t.inactive.bg, 0x102030);
+	CHECK(t.inactive.bg == 0xc4c4c4 && t.inactive.fg == 0x000000);
 	rc(dir, "Mwm*basicBackground: #21628c\nMwm*textForeground: nonsense\n");
 	mtk_theme_load(&t);
+	CHECK(!t.has_fg);
 	CHECK_INT(t.inactive.fg, 0xffffff);
 }
 
@@ -290,6 +282,11 @@ static void check_lists(const struct mtk_theme *t)
 	CHECK(mtk_contrast_ratio(t->select.bg, t->select.fg) >= 4.5f);
 	CHECK_INT(t->list.bg, mtk_mix(t->inactive.bg, 0xffffff, 0.3f));
 	CHECK_INT(t->select.top, mtk_shade(t->select.bg, 0).top);
+	CHECK_INT(t->field.bg, 0xf6f6f6);
+	CHECK(mtk_contrast_ratio(t->field.bg, t->field.fg) >= 4.5f);
+	CHECK_INT(t->field.bot, mtk_shade(0xf6f6f6, 0).bot);
+	CHECK_INT(t->trough, mtk_mix(t->inactive.bg, 0x000000, 0.12f));
+	CHECK_INT(t->folder, 0xc9a85c);
 }
 
 TEST(lists)
@@ -301,9 +298,19 @@ TEST(lists)
 	rc(dir, "");
 	mtk_theme_load(&t);
 	check_lists(&t);
+	CHECK_INT(t.list.bg, mtk_mix(0xc4c4c4, 0xffffff, 0.3f));
+	CHECK_INT(t.list.fg, 0x000000);
+	CHECK_INT(t.select.bg, 0x2e5a8c);       /* far enough as it is */
+	CHECK_INT(t.select.fg, 0xffffff);
+	CHECK_INT(t.field.fg, 0x000000);
+	CHECK_INT(t.trough, 0xacacac);
+
+	/* IRIX's Base: #c6c1aa on its list #c4c4c4 has 1.04:1, moved. */
+	rc(dir, "Mwm*basicBackground: #aaaaaa\nMwm*activeBackground: #c6c1aa\n");
+	mtk_theme_load(&t);
+	check_lists(&t);
 	CHECK_INT(t.list.bg, 0xc4c4c4);
-	CHECK_INT(t.list.fg, 0x000000);         /* the built-in grey's black */
-	CHECK(t.select.bg != 0xc6c1aa);         /* 1.04:1 on the list, moved */
+	CHECK(t.select.bg != 0xc6c1aa);
 
 	/* Buckingham with its palette: the list #a18fa1, active #9991a6, 1.00:1. */
 	rc(dir, "Mwm*activeBackground: #9991a6\nMwm*background: #8c8c8c\n"
@@ -315,27 +322,28 @@ TEST(lists)
 	CHECK_INT(t.active.bg, 0x9991a6);       /* mwc's colour itself is kept */
 
 	/* Far enough already: the active colour as it is, its text as far as it reads. */
-	rc(dir, "Mwm*background: #aaaaaa\nMwm*activeBackground: #7387ad\n");
+	rc(dir, "Mwm*basicBackground: #aaaaaa\nMwm*activeBackground: #7387ad\n");
 	mtk_theme_load(&t);
 	check_lists(&t);
 	CHECK_INT(t.select.bg, 0x7387ad);
-	/* Motif's white on the set grey, not chosen: black or white on the list. */
+	/* The face's text, not chosen: black or white on the list. */
 	CHECK_INT(t.list.fg, mtk_best_contrast(0xc4c4c4));
 
 	/* A text colour that is set stays where it reads. */
-	rc(dir, "Mwm*background: #202840\nMwm*foreground: #ffd700\n");
+	rc(dir, "Mwm*basicBackground: #202840\nMwm*textForeground: #ffd700\n");
 	mtk_theme_load(&t);
 	check_lists(&t);
 	CHECK(mtk_contrast_ratio(t.list.bg, 0xffd700) < 4.5f || t.list.fg == 0xffd700);
-	rc(dir, "Mwm*background: #000040\nMwm*foreground: #ffd700\n");
+	rc(dir, "Mwm*basicBackground: #000040\nMwm*textForeground: #ffd700\n");
 	mtk_theme_load(&t);
 	CHECK_INT(t.list.fg, 0xffd700);
 	check_lists(&t);
 	/* Set, though it is Motif's white too: chosen, moved as far as it reads. */
-	rc(dir, "Mwm*background: #8c8c8c\nMwm*foreground: #ffffff\n");
+	rc(dir, "Mwm*basicBackground: #8c8c8c\nMwm*textForeground: #ffffff\n");
 	mtk_theme_load(&t);
 	check_lists(&t);
 	CHECK(t.list.fg != 0xffffff && t.list.fg != mtk_best_contrast(t.list.bg));
+	CHECK(t.field.fg != 0xffffff && t.field.fg != mtk_best_contrast(0xf6f6f6));
 	/* The palette's text, though it is Motif's white on basicBackground too. */
 	rc(dir, "Mwm*basicBackground: #795f78\nMwm*textForeground: #ffffff\n");
 	mtk_theme_load(&t);
@@ -350,8 +358,8 @@ TEST(lists)
 
 	/* A theme made by hand gets the same: mtk_theme_lists() is what loads it. */
 	struct mtk_theme m = { 0 };
-	m.inactive = mtk_shade(0xaaaaaa, 0x000000);
-	m.active = mtk_shade(0xc6c1aa, 0x000000);
+	m.inactive = mtk_shade(0xc4c4c4, 0x000000);
+	m.active = mtk_shade(0x2e5a8c, 0xffffff);
 	mtk_theme_lists(&m);
 	rc(dir, "");
 	mtk_theme_load(&t);
@@ -359,16 +367,19 @@ TEST(lists)
 	CHECK_INT(m.list.fg, t.list.fg);
 	CHECK_INT(m.select.bg, t.select.bg);
 	CHECK_INT(m.select.fg, t.select.fg);
+	CHECK_INT(m.field.fg, t.field.fg);
+	CHECK_INT(m.trough, t.trough);
 	/* A text a client chose otherwise than Motif, without the flags: kept. */
 	m.inactive = mtk_shade(0x8c8c8c, 0x202020);
 	mtk_theme_lists(&m);
 	CHECK_INT(m.list.fg, 0x202020);
+	CHECK_INT(m.field.fg, 0x202020);
 
 	/* Light on light, dark on dark. */
-	rc(dir, "Mwm*background: #ffffff\nMwm*activeBackground: #ffffff\n");
+	rc(dir, "Mwm*basicBackground: #ffffff\nMwm*activeBackground: #ffffff\n");
 	mtk_theme_load(&t);
 	check_lists(&t);
-	rc(dir, "Mwm*background: #000000\nMwm*activeBackground: #262626\n");
+	rc(dir, "Mwm*basicBackground: #000000\nMwm*activeBackground: #262626\n");
 	mtk_theme_load(&t);
 	check_lists(&t);
 }
@@ -382,18 +393,20 @@ TEST(err)
 	setenv("XDG_CONFIG_HOME", dir, 1);
 	rc(dir, "");
 	mtk_theme_load(&t);
+	CHECK_INT(t.err, 0x8a0303);             /* reads as it is */
+	CHECK_INT(t.dim, mtk_dimmed(0xc4c4c4, 0x000000));
+	rc(dir, "Mwm*basicBackground: #aaaaaa\n");
+	mtk_theme_load(&t);
 	CHECK_INT(t.err, 0x830303);             /* Base: #8a0303 moved to 4.5:1 */
-	CHECK_INT(t.dim, mtk_dimmed(0xaaaaaa, 0x000000));
-	rc(dir, "Mwm*background: #ffffff\n");
+	rc(dir, "Mwm*basicBackground: #ffffff\n");
 	mtk_theme_load(&t);
 	CHECK_INT(t.err, 0x8a0303);             /* reads as it is */
-	rc(dir, "Mwm*background: #202020\n");
+	rc(dir, "Mwm*basicBackground: #202020\n");
 	mtk_theme_load(&t);
 	CHECK_INT(t.err, 0xffa0a0);             /* the light red on a dark face */
 	/* Motif's white on #8c8c8c has 3.4:1: towards it no red gets to 4.5:1. */
-	rc(dir, "Mwm*background: #8c8c8c\n");
+	rc(dir, "Mwm*basicBackground: #8c8c8c\nMwm*textForeground: #ffffff\n");
 	mtk_theme_load(&t);
-	CHECK_INT(t.inactive.fg, 0xffffff);
 	CHECK(mtk_contrast_ratio(t.inactive.bg, t.err) >= 4.5f);
 	/* On the palette's face, not the frames'. */
 	rc(dir, "Mwm*background: #ffffff\nMwm*basicBackground: #795f78\n");

@@ -13,30 +13,33 @@ mtk tells it when, at which scale and with which colours.
 
 ## Colours
 
-mtk takes mwc's colours as mwc does: `MWC_INACTIVE` and `MWC_ACTIVE`, else
-`Mwm*background` and `Mwm*activeBackground` from `~/.config/mwc/mwmrc`, else `#aaaaaa`
-and `#c6c1aa`, IRIX's Base scheme, as mwc's. On the built-in grey the text is black, as
-mwc has it. The shadows and the default text follow Motif 2.3.8's
-`CalculateColorsRGB()`, as mwc's own frames do, so a client and its frame match: the
-rules are mwc's `src/color.c` and `color.h`, copied unchanged into `mwc/` and built
-under names that start with `mtk_`. `make check` compares them with `MWC_DIR`'s.
-`mtk_best_contrast()`, `mtk_dimmed()` and `mtk_readable()` are there for text that
-must reach WCAG's 4.5:1.
+A client draws on IRIX's client palette: `Mwm*basicBackground` from
+`~/.config/mwc/mwmrc` with `Mwm*textForeground`, else mwc's `#c4c4c4` with black, as
+`theme.inactive`. A `basicBackground` without `textForeground` gets black or white.
+`theme.active` is mwc's focused frame: `MWC_ACTIVE`, else `Mwm*activeBackground`, else
+`#2e5a8c`, its text `Mwm*activeForeground`, else Motif's. The text on both has at
+least 4.5:1: a colour with less is moved towards black or white as far as that needs.
+`MWC_INACTIVE`, `Mwm*background` and `Mwm*foreground` are mwc's frames' alone.
+`has_fg` and `has_active_fg` say that `textForeground` and `activeForeground` are set.
+mwc's `docs/mwmrc.irix-schemes` has the palette for each of IRIX 6.5's schemes.
 
-With `Mwm*basicBackground` in the mwmrc, IRIX's client palette, a client draws as
-IRIX's programs did: `inactive` is that colour with `Mwm*textForeground`, else black or
-white, while the frame colours stay mwc's. `active` keeps `Mwm*activeBackground`. The
-text on both then has at least 4.5:1: a palette or `activeForeground` colour with less
-is moved towards black or white as far as that needs, and `Mwm*foreground` is left to
-mwc's titles (`has_fg` is 0). `theme.palette` says that it is on. mwc's
-`docs/mwmrc.irix-schemes` has both for each of IRIX 6.5's schemes.
+The shadows and the default text follow Motif 2.3.8's `CalculateColorsRGB()`, as mwc's
+own frames do, so a client and its frame match: the rules are mwc's `src/color.c` and
+`color.h`, copied unchanged into `mwc/` and built under names that start with `mtk_`.
+`make check` compares them with `MWC_DIR`'s. `mtk_best_contrast()`, `mtk_dimmed()` and
+`mtk_readable()` are there for text that must reach WCAG's 4.5:1.
 
 A list is a face of the clients' own, `theme.list`: `inactive` 30 % towards white.
-mwc's active colour often lands on its brightness (Base's `#c6c1aa` on its list
+mwc's active colour often lands on its brightness (IRIX Base's `#c6c1aa` on its list
 `#c4c4c4` has 1.04:1, Buckingham's 1.00:1), so a row selected on it, `theme.select`,
 is that colour moved towards black or white until it has `MTK_SELECT_CONTRAST`, 2:1,
 on the list (`mtk_apart()`). The text on both has 4.5:1. mwc draws no list and keeps
 its colours; its armed menu item stands out by its bevel, not by colour.
+
+A field to type in is `theme.field`, `#f6f6f6` on every palette, its text as on the
+list. `theme.trough` is a scrollbar's trough, `inactive` 12 % towards black, and
+`theme.folder`, `#c9a85c`, a folder icon's face. A client draws with these and sets
+no colours of its own.
 
 On the window `theme.dim` is dimmed text and `theme.err` error text: a dark red, or a
 light one where white reads better, moved towards black or white as far as 4.5:1

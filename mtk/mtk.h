@@ -17,7 +17,7 @@
 #include <xkbcommon/xkbcommon.h>
 #include <xkbcommon/xkbcommon-compose.h>
 
-#define MTK_VERSION "0.12.0"
+#define MTK_VERSION "0.14.0"
 
 /* ---- colours (color.c) ---------------------------------------------------- */
 
@@ -79,24 +79,27 @@ char *mtk_mwmrc_get(const char *key, char *val, size_t n);
 /* The value of the last "Mwm*app*key: value" line, for one client. */
 char *mtk_mwmrc_client_get(const char *app, const char *key, char *val, size_t n);
 
-/* The colours mwc draws with: MWC_INACTIVE, else Mwm*background, else #aaaaaa;
- * MWC_ACTIVE, else Mwm*activeBackground, else #c6c1aa, IRIX's Base scheme. The
- * text is Mwm*foreground and Mwm*activeForeground, else mtk_text_color(); on the
- * built-in grey black, as mwc has it.
- * With Mwm*basicBackground, IRIX's client palette, inactive is that colour instead,
- * its text Mwm*textForeground, else black or white; the text on inactive and active
- * then has at least 4.5:1 (mtk_readable()), and Mwm*foreground is left to mwc's
- * frames: has_fg is 0. */
+/* The colours a client draws with, the client palette: inactive is
+ * Mwm*basicBackground, else #c4c4c4, with Mwm*textForeground, else black on the
+ * built-in face and the better of black and white on one that is set; active is
+ * MWC_ACTIVE, else Mwm*activeBackground, else #2e5a8c, mwc's focused frame, with
+ * Mwm*activeForeground, else black or white. The text on both has at least 4.5:1
+ * (mtk_readable()). MWC_INACTIVE, Mwm*background and Mwm*foreground are mwc's
+ * frames' alone. */
 struct mtk_theme {
 	struct mtk_shade inactive, active;
 	/* A list, inactive.bg 30 % towards white, and a row selected on it, active.bg
 	 * moved to MTK_SELECT_CONTRAST on the list where it is closer (mtk_apart()).
-	 * Their text has 4.5:1: the chosen text (set, the palette's, the built-in
-	 * grey's black) as far as it reads, else black or white; on select active.fg
-	 * as far as it reads. Clients' own faces: mwc draws no list. */
+	 * Their text has 4.5:1: the chosen text (textForeground, or a client's own
+	 * that is not Motif's) as far as it reads, else black or white; on select
+	 * active.fg as far as it reads. Clients' own faces: mwc draws no list. */
 	struct mtk_shade list, select;
-	int has_fg, has_active_fg;      /* the user set the text colour */
-	int palette;                    /* Mwm*basicBackground is set */
+	/* A field to type in, #f6f6f6, its text as on list: one face on every palette,
+	 * as the clients had it. */
+	struct mtk_shade field;
+	uint32_t trough;                /* a scrollbar's, inactive.bg 12 % towards black */
+	uint32_t folder;                /* a folder icon's face, #c9a85c */
+	int has_fg, has_active_fg;      /* textForeground, activeForeground set */
 	uint32_t dim;                   /* mtk_dimmed() on inactive */
 	/* Error text on inactive: a dark red, a light one where white reads better,
 	 * moved towards black or white as far as 4.5:1 needs. */
@@ -105,7 +108,8 @@ struct mtk_theme {
 
 void mtk_theme_load(struct mtk_theme *t);
 
-/* list, select, dim and err from inactive, active, has_fg and palette, as
+/* list, select, field, trough, folder, dim and err from inactive, active and
+ * has_fg, as
  * mtk_theme_load() sets them: for a theme a client makes of its own, in its tests. */
 void mtk_theme_lists(struct mtk_theme *t);
 

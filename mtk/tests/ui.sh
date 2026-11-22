@@ -34,11 +34,11 @@ SHOT=$SMOKE_DIR/ui.png
 ERR_SHOT=$MTK_DIR/build/ui-last.png
 DS=$SMOKE_DIR/demo.state
 # Motif 2.3.8's shades of mwc's default colours, as mwc draws its own frames.
-TOP=dadada      # the light shadow of #aaaaaa, mwc's default
-ACT_TOP=e7e5db  # ... of #c6c1aa, the border with the keyboard
-BOT=5a5a5a
-BG=aaaaaa
-SEL=c6c1aa      # activeBackground: a lit menu item
+TOP=e6e6e6      # the light shadow of #c4c4c4, the client palette's face
+ACT_TOP=9db2c9  # ... of #2e5a8c, the border with the keyboard
+BOT=6c6c6c
+BG=c4c4c4
+SEL=2e5a8c      # activeBackground: a lit menu item, the border's face
 
 mkdir -p "$XDG_CONFIG_HOME/mwc"
 : >"$XDG_CONFIG_HOME/mwc/mwmrc"
@@ -97,7 +97,7 @@ check "it knows" "[ \"\$(ds focus)\" = 1 ]"
 check "mtk_window_focused() says so too" "[ \"\$(ds wfocus)\" = 1 ]"
 check "the seat and the display" "[ \"\$(ds seat)\" = 1 ] && [ \"\$(ds display)\" = 1 ]"
 pixel_at "its border is the active one, in Motif's light shadow" 0 60 $ACT_TOP
-pixel_at "the face beside the bevel" 2 60 c6c1aa
+pixel_at "the face beside the bevel" 2 60 $SEL
 
 # Another window takes the keyboard: the border goes inactive.
 WAYLAND_DISPLAY=wayland-0 build/xdgc app=thief size=200x100 >"$SMOKE_DIR/thief.log" 2>&1 &
@@ -293,7 +293,7 @@ where
 check "the same size in the layout" "[ \"\$(get mtkdemo w)x\$(get mtkdemo h)\" = 300x120 ]"
 SC=2
 pixel_at "the bevel in buffer pixels" $((2 * 1 + 1)) 120 $ACT_TOP
-pixel_at "the face right beside it" 4 120 c6c1aa
+pixel_at "the face right beside it" 4 120 $SEL
 SC=1
 sed -i '/outputScale/d' "$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
@@ -414,17 +414,18 @@ sed -i '/outputScale/d' "$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 
 # ---- IRIX's client palette -------------------------------------------------------
-# With Mwm*basicBackground the client's face is that colour; its border keeps the
-# frame colours, as mwc's frames do.
+# The client's face is Mwm*basicBackground, else #c4c4c4, whatever mwc's frames are;
+# its border keeps the active frame colour, as mwc's frames do.
+echo 'Mwm*background: #102030' >>"$XDG_CONFIG_HOME/mwc/mwmrc"
 MTKDEMO_FIXED=1 start_demo
-pixel_at "without it the face is mwc's grey" 200 12 $BG
+pixel_at "without it the face is the built-in #c4c4c4, not the frames' grey" 200 12 $BG
 quit_demo Escape
 echo 'Mwm*basicBackground: #795f78' >>"$XDG_CONFIG_HOME/mwc/mwmrc"
 MTKDEMO_FIXED=1 start_demo
 pixel_at "with it the face is basicBackground" 200 12 795f78
 pixel_at "the border keeps the active frame colour" 0 60 $ACT_TOP
 quit_demo Escape
-sed -i '/basicBackground/d' "$XDG_CONFIG_HOME/mwc/mwmrc"
+sed -i '/basicBackground/d; /Mwm\*background/d' "$XDG_CONFIG_HOME/mwc/mwmrc"
 
 # ---- a poll that fails ----------------------------------------------------------
 # Told as itself, with its cause, not as a lost connection. Without ASan, whose

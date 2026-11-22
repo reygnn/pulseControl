@@ -6,12 +6,14 @@
 #ifndef MWC_COLOR_H
 #define MWC_COLOR_H
 
-#include <stdbool.h>
 #include <stdint.h>
 
-/* IRIX 6.5's Base scheme (IndigoMagic); the desktop is mwc's own. */
-#define COLOR_ACTIVE 0xc6c1aau
-#define COLOR_INACTIVE 0xaaaaaau
+/* mwc's own: a blue focused frame, grey for the rest, and IRIX's client palette, the
+ * surface of mtk's clients. Motif gives the blue white text and the greys black. */
+#define COLOR_ACTIVE 0x2e5a8cu
+#define COLOR_INACTIVE 0xb4b4b4u
+#define COLOR_BASIC 0xc4c4c4u
+#define COLOR_TEXT 0x000000u
 #define COLOR_ROOT 0x5b7792u
 
 struct color_shades {
@@ -20,11 +22,6 @@ struct color_shades {
 
 /* Motif's title text on bg: black above 70% of its brightness, white otherwise. */
 uint32_t color_text(uint32_t bg);
-
-/* The text for unfocused frames, menus and icons with no foreground set: black on the
- * built-in COLOR_INACTIVE, as the Base palette has it, else color_text(bg). builtin
- * says that bg is the built-in one because nothing good was set, not that it equals it. */
-uint32_t color_inactive_text(uint32_t bg, bool builtin);
 
 /* The top and bottom shadows of bg as Motif computes them, cut to 8 bits as a TrueColor
  * screen shows them. */
