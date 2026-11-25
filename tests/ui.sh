@@ -17,6 +17,9 @@ MWC_DIR=${MWC_DIR:-$SC_DIR/../mwc}
 [ -d "$MWC_DIR" ] || { echo "FAIL: no mwc in $MWC_DIR (set MWC_DIR)"; exit 1; }
 cd "$MWC_DIR" || exit 1
 . tests/lib.sh
+# mwc's root colour, from the source it was built from: it has changed before.
+ROOT=$(sed -n 's/^#define COLOR_ROOT 0x\([0-9a-f]\{6\}\)u$/\1/p' src/color.h)
+[ -n "$ROOT" ] || { echo "FAIL: no COLOR_ROOT in $MWC_DIR/src/color.h"; exit 1; }
 require_tools grim pactl pulseaudio
 for tool in build/vinput build/pngtool build/xdgc build/layerc; do
 	[ -x "$tool" ] || { echo "FAIL: $MWC_DIR/$tool not built (make $tool)"; exit 1; }
@@ -662,7 +665,7 @@ shows "back at 50" 50
 # As wide as its text: "Output" and "First" end well before 100, the root shows there.
 do_input key i
 info_has "i shows the output" 000000 32
-pixel_is "the popup is as wide as its text" $(($(PX) + 100)) $((WY + 20)) 5b7792
+pixel_is "the popup is as wide as its text" $(($(PX) + 100)) $((WY + 20)) "$ROOT"
 do_input key Escape
 info_gone "and Esc closes it"
 
